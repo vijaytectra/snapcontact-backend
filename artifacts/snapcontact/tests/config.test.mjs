@@ -17,6 +17,24 @@ test('static native configuration registers local capabilities without contacts-
 test('prebuild plugin can be loaded by Expo in the installed dependency tree', () => {
   assert.equal(typeof require('../plugins/withSnapCapture.js'), 'function');
 });
+test('share extension is ordered as a host build dependency even in a new Xcode project', () => {
+  const { ensureTargetDependency } = require('../plugins/xcodeTargetDependency.js');
+  const host = { dependencies: [] };
+  const extension = {};
+  const objects = {};
+  const project = {
+    hash: { project: { objects } },
+    pbxNativeTargetSection: () => ({ host, extension }),
+    addTargetDependency(hostUuid, dependencyUuids) {
+      assert.ok(objects.PBXTargetDependency);
+      assert.ok(objects.PBXContainerItemProxy);
+      host.dependencies.push({ value: dependencyUuids[0] });
+    },
+  };
+  ensureTargetDependency(project, 'host', 'extension');
+  ensureTargetDependency(project, 'host', 'extension');
+  assert.deepEqual(host.dependencies, [{ value: 'extension' }]);
+});
 test('OCR is bundled for offline-first use, not downloaded by Play Services', () => {
   const gradle = fs.readFileSync(new URL('../modules/snap-capture/android/build.gradle', import.meta.url), 'utf8');
   assert.ok(gradle.includes('com.google.mlkit:text-recognition:'));

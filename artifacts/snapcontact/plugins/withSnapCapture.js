@@ -4,6 +4,7 @@ const {
   withInfoPlist, withEntitlementsPlist, withAndroidManifest, withXcodeProject,
   createRunOncePlugin,
 } = require('expo/config-plugins');
+const { ensureTargetDependency } = require('./xcodeTargetDependency');
 
 const TARGET = 'SnapContactShare';
 
@@ -72,11 +73,16 @@ function withSnapCapture(config) {
     fs.writeFileSync(path.join(folder, `${TARGET}.entitlements`), `<?xml version="1.0" encoding="UTF-8"?>
 <plist version="1.0"><dict><key>com.apple.security.application-groups</key><array><string>${appGroup}</string></array></dict></plist>`);
 
+    const host = project.getFirstTarget();
     const existing = Object.entries(project.pbxNativeTargetSection()).find(([key, target]) =>
       !key.endsWith('_comment') && target.name?.replaceAll('"', '') === TARGET,
     );
-    if (existing) return mod; // Idempotent prebuild: do not duplicate targets or phases.
+    if (existing) {
+      ensureTargetDependency(project, host.uuid, existing[0]);
+      return mod; // Idempotent prebuild: do not duplicate targets or phases.
+    }
     const target = project.addTarget(TARGET, 'app_extension', TARGET, `${bundleId}.share`);
+    ensureTargetDependency(project, host.uuid, target.uuid);
     // Add an actual Sources phase and compile file to the extension target, not the host.
     project.addBuildPhase([], 'PBXSourcesBuildPhase', 'Sources', target.uuid);
     project.addBuildPhase([], 'PBXFrameworksBuildPhase', 'Frameworks', target.uuid);
