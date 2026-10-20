@@ -1,6 +1,6 @@
-# [Project name]
+# SnapContact
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+Working-name, offline-first iOS/Android utility for turning explicitly imported or shared images into reviewed contacts using native system UI.
 
 ## Run & Operate
 
@@ -30,7 +30,10 @@ _Populate as you build — non-obvious choices a reader couldn't infer from the 
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+- Keep capture processing on device. No mandatory login, scraping, background monitoring of other apps, or cloud uploads of contacts/screenshots.
+- Initial release is free. No payments now; future lifetime purchases must use storefront-localized pricing, not the selected phone-number country.
+- Native OCR and share reception require a compiled build; never describe the browser/Expo Go preview as proof that native capabilities or store signing work.
+- Real-device verification and release steps: `artifacts/snapcontact/docs/RELEASE-AND-DEVICE-TESTING.md`.
 
 ## User preferences
 
@@ -38,7 +41,9 @@ _Populate as you build — explicit user instructions worth remembering across s
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- Do not present a React Native Modal while native contact editors are opening: it competes for iOS presentation. Show results after the queue finishes.
+- Android contacts apps can return no reliable save confirmation. Stop the queue and report an unconfirmed save rather than inventing success.
+- The iOS Share Extension queues one private image; the user returns to the host app manually. No unsupported automatic extension-to-host launch.
 
 ## Pointers
 

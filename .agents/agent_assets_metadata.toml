@@ -1,0 +1,16 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "FqJ7N7DG-Irg8yuR1cJqp"
+uri = "file://artifacts/snapcontact/docs/RELEASE-AND-DEVICE-TESTING.md"
+type = "text"
+title = "SnapContact build and release guide"
+description = "Native setup, real-device acceptance checklist, privacy checks, and App Store / Google Play release instructions."
+logical_id = "c6084814-1068-42c3-b111-60a60b562265"
+content_hash = "sha256:1c6c535f29294900c604f9c3ebb8482f1675104d0a81b4d97e30d3330161920b"
+size = 13025
+mtime_ms = 1792479199113
+storage_uri = "gcs://replit-rams-assets-sisko/rams/assets/repl:23df619a-f9cf-4e73-970a-a6a2096e5771/c6084814-1068-42c3-b111-60a60b562265/18da8cd0-d4fb-4816-a63a-d00ed430461c"
+storage_version_token = "1792479445731205"
+content_type = "text/markdown"

@@ -47,3 +47,6 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+/generated-artifacts/
+/artifacts/snapcontact/ios/
+/artifacts/snapcontact/android/

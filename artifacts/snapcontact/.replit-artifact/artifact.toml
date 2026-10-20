@@ -1,0 +1,24 @@
+kind = "mobile"
+previewPath = "/"
+title = "SnapContact"
+description = "Offline-first iOS and Android contact capture utility. Import or photograph an image, detect and review international phone numbers on device, then create contacts using native system UI without login or cloud uploads."
+version = "1.0.0"
+id = "artifacts/snapcontact"
+router = "expo-domain"
+
+[[services]]
+name = "expo"
+ensurePreviewReachable = "/status"
+paths = [ "/" ]
+localPort = 21888
+
+[services.development]
+run = "pnpm --filter @workspace/snapcontact run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/snapcontact", "run", "build" ]
+run = [ "pnpm", "--filter", "@workspace/snapcontact", "run", "serve" ]
+
+[services.env]
+PORT = "21888"
+BASE_PATH = "/"
