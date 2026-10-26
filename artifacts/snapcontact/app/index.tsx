@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Image, Keyboard, Pressable, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
@@ -13,6 +13,7 @@ import { CountrySheet } from '@/components/CountrySheet';
 import { SettingsModal } from '@/components/SettingsModal';
 import { SaveSummary } from '@/components/SaveSummary';
 import { CandidateCard } from '@/components/CandidateCard';
+import { R } from '@/lib/runtimeStrings';
 
 export default function Index() {
   const cap = useCapture();
@@ -22,6 +23,10 @@ export default function Index() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [rawOpen, setRawOpen] = useState(false);
   const [dismissed, setDismissed] = useState<unknown>(null);
+
+  useEffect(() => {
+    if (cap.imageUri && cap.error === R.ocrNativeOnly) setRawOpen(true);
+  }, [cap.error, cap.imageUri]);
 
   if (!cap.ready) {
     return (
@@ -37,6 +42,7 @@ export default function Index() {
   const countryName = cap.countries.find((o) => o.code === cap.country);
   const reviewing = cap.phase !== 'idle' || cap.candidates.length > 0 || !!cap.imageUri;
   const saving = cap.phase === 'saving';
+  const nativeOcrUnavailable = !!cap.imageUri && !cap.nativeAvailable;
   const selected = cap.candidates.filter((x) => x.selected);
   const canSave = selected.length > 0 && selected.every((x) => x.valid) && cap.nativeAvailable && !saving;
   // Never present a React Native Modal over the OS contact editor. It competes
@@ -59,7 +65,7 @@ export default function Index() {
 
   const messages = (
     <>
-      {cap.error ? <Banner testID="error-banner" kind="error" text={cap.error} onDismiss={cap.dismissError} action={cap.imageUri ? { label: S.review.retry, onPress: () => { cap.retry(); } } : undefined} /> : null}
+      {cap.error ? <Banner testID="error-banner" kind="error" text={cap.error} onDismiss={cap.dismissError} action={cap.imageUri && cap.nativeAvailable ? { label: S.review.retry, onPress: () => { cap.retry(); } } : undefined} /> : null}
       {cap.notice ? <Banner testID="notice-banner" kind="notice" text={cap.notice} /> : null}
     </>
   );
@@ -156,9 +162,9 @@ export default function Index() {
         <Animated.View entering={FadeIn} testID="empty" style={{ backgroundColor: c.card, borderRadius: 20, padding: 22, gap: 10, borderWidth: 1, borderColor: c.border }}>
           <Ionicons name="search-outline" size={28} color={c.mutedForeground} />
           <Text style={{ fontFamily: F.b, fontSize: 19, color: c.foreground }}>{S.review.emptyTitle}</Text>
-          <Text style={{ fontFamily: F.r, fontSize: 15, lineHeight: 22, color: c.mutedForeground }}>{S.review.emptyBody}</Text>
+          <Text style={{ fontFamily: F.r, fontSize: 15, lineHeight: 22, color: c.mutedForeground }}>{nativeOcrUnavailable ? S.review.previewManualBody : S.review.emptyBody}</Text>
           <View style={{ marginTop: 6, gap: 10 }}>
-            {cap.imageUri ? <Button testID="retry" label={S.review.retry} icon="refresh" onPress={() => { cap.retry(); }} /> : null}
+            {cap.imageUri && cap.nativeAvailable ? <Button testID="retry" label={S.review.retry} icon="refresh" onPress={() => { cap.retry(); }} /> : null}
             <Button testID="try-again" label={S.review.tryAgain} variant="secondary" onPress={cap.clear} />
           </View>
         </Animated.View>
@@ -174,17 +180,17 @@ export default function Index() {
 
       {cap.phase !== 'processing' ? (
         <View style={{ backgroundColor: c.card, borderRadius: 18, borderWidth: 1, borderColor: c.border, overflow: 'hidden' }}>
-          <Pressable testID="raw-toggle" accessibilityRole="button" accessibilityState={{ expanded: rawOpen }} accessibilityLabel={S.review.rawTitle}
+          <Pressable testID="raw-toggle" accessibilityRole="button" accessibilityState={{ expanded: rawOpen }} accessibilityLabel={nativeOcrUnavailable ? S.review.previewTextTitle : S.review.rawTitle}
             onPress={() => { tap(); setRawOpen(!rawOpen); }} style={{ minHeight: 56, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-            <Text style={{ flex: 1, fontFamily: F.s, fontSize: 16, color: c.foreground }}>{S.review.rawTitle}</Text>
+            <Text style={{ flex: 1, fontFamily: F.s, fontSize: 16, color: c.foreground }}>{nativeOcrUnavailable ? S.review.previewTextTitle : S.review.rawTitle}</Text>
             <Ionicons name={rawOpen ? 'chevron-up' : 'chevron-down'} size={20} color={c.mutedForeground} />
           </Pressable>
           {rawOpen ? (
             <View style={{ padding: 16, paddingTop: 0, gap: 10 }}>
-              <Text style={{ fontFamily: F.r, fontSize: 14, color: c.mutedForeground }}>{S.review.rawHint}</Text>
-              <TextInput testID="raw-input" accessibilityLabel={S.review.rawTitle} value={cap.text} onChangeText={cap.setText} multiline textAlignVertical="top"
+              <Text style={{ fontFamily: F.r, fontSize: 14, color: c.mutedForeground }}>{nativeOcrUnavailable ? S.review.previewTextHint : S.review.rawHint}</Text>
+              <TextInput testID="raw-input" accessibilityLabel={nativeOcrUnavailable ? S.review.previewTextTitle : S.review.rawTitle} value={cap.text} onChangeText={cap.setText} multiline textAlignVertical="top" placeholder={S.home.textPlaceholder} placeholderTextColor={c.mutedForeground}
                 style={{ minHeight: 120, backgroundColor: c.background, borderRadius: 12, borderWidth: 1, borderColor: c.border, padding: 12, fontFamily: F.r, fontSize: 15, color: c.foreground }} />
-              <Button testID="rescan" label={S.review.rescan} icon="refresh" variant="secondary" disabled={!cap.text.trim()} onPress={() => cap.processText(cap.text)} />
+              <Button testID="rescan" label={nativeOcrUnavailable ? S.review.findNumbersInText : S.review.rescan} icon="search" variant="secondary" disabled={!cap.text.trim()} onPress={() => cap.processText(cap.text)} />
             </View>
           ) : null}
         </View>
