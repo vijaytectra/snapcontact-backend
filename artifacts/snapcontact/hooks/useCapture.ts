@@ -30,6 +30,7 @@ export function useCapture() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [outcomes, setOutcomes] = useState<Outcome[]>([]);
+  const [quickCaptureActive, setQuickCaptureActive] = useState(false);
   const generation = useRef(0);
   const busy = useRef(false);
   const countryRef = useRef(country);
@@ -76,20 +77,84 @@ export function useCapture() {
     return () => { live = false; generation.current++; };
   }, []);
 
+  const handleCapturedText = useCallback((capturedText: string) => {
+    if (!capturedText) return;
+    generation.current++;
+    busy.current = false;
+    imageRef.current = null;
+    setImageUri(null);
+    setText(capturedText);
+    const extracted = extractCandidates(capturedText, countryRef.current);
+    setCandidates(extracted);
+    setPhase('review');
+    setError(null);
+    setOutcomes([]);
+    if (!capturedText.trim()) {
+      setNotice(R.noReadableText);
+    } else {
+      setNotice(R.screenCaptured);
+    }
+  }, []);
+
   useEffect(() => {
     if (!ready) return;
     const receive = async () => {
-      if (busy.current || imageRef.current) return;
+      if (busy.current) return;
       try {
+        // Check for persistent pending Quick Capture result
+        const pendingCapturedText = device.getPendingCaptureResult();
+        if (pendingCapturedText) {
+          handleCapturedText(pendingCapturedText);
+          return;
+        }
+        if (imageRef.current) return;
         const pending = await device.pendingImage();
         if (pending) await processImage(pending);
       } catch (err) { setError(err instanceof Error ? err.message : R.shareUnreadable); }
     };
     void receive();
-    const appSub = AppState.addEventListener('change', state => { if (state === 'active') void receive(); });
+    const appSub = AppState.addEventListener('change', state => {
+      if (state === 'active') {
+        void receive();
+        if (device.quickCaptureAvailable) {
+          setQuickCaptureActive(device.isQuickCaptureRunning());
+        }
+      }
+    });
     const urlSub = Linking.addEventListener('url', () => { void receive(); });
     return () => { appSub.remove(); urlSub.remove(); };
-  }, [ready, imageUri, processImage]);
+  }, [ready, imageUri, processImage, handleCapturedText]);
+
+  useEffect(() => {
+    if (!device.quickCaptureAvailable) return;
+    setQuickCaptureActive(device.isQuickCaptureRunning());
+
+    const unsubStart = device.addQuickCaptureListener('onQuickCaptureStarted', () => {
+      setQuickCaptureActive(true);
+      setNotice(R.quickCaptureStarted);
+    });
+
+    const unsubStop = device.addQuickCaptureListener('onQuickCaptureStopped', () => {
+      setQuickCaptureActive(false);
+      setNotice(R.quickCaptureStopped);
+    });
+
+    const unsubError = device.addQuickCaptureListener('onQuickCaptureError', (data: { error?: string }) => {
+      setError(data?.error || R.quickCaptureFailed);
+    });
+
+    const unsubCaptured = device.addQuickCaptureListener('onScreenCaptured', (data: { text: string }) => {
+      device.clearPendingCaptureResult();
+      handleCapturedText(data?.text ?? '');
+    });
+
+    return () => {
+      unsubStart();
+      unsubStop();
+      unsubError();
+      unsubCaptured();
+    };
+  }, [handleCapturedText]);
 
   const setCountry = (code: CountryCode) => {
     if (busy.current || !getCountries().includes(code)) return;
@@ -140,16 +205,18 @@ export function useCapture() {
     setText(value); setCandidates(extractCandidates(value, countryRef.current));
     setPhase('review'); setError(null); setNotice(null); setOutcomes([]);
   };
-  const updateCandidate = (id: string, patch: { number?: string; name?: string; selected?: boolean }) => {
+  const updateCandidate = (id: string, patch: { number?: string; name?: string; email?: string; website?: string; selected?: boolean }) => {
     if (busy.current) return;
     setCandidates(rows => rows.map(row => {
       if (row.id !== id) return row;
       const merged = { ...row, ...patch };
-      const check = validateNumber(merged.number, countryRef.current);
+      const check = merged.number
+        ? validateNumber(merged.number, countryRef.current)
+        : { valid: Boolean(merged.email || merged.website), formatted: merged.email || merged.website || '', message: '', extension: undefined, countryLabel: '', country: undefined, callingCode: undefined, countryName: '', international: false };
       return { ...merged, valid: check.valid, formatted: check.formatted, message: check.message,
         extension: check.extension, countryLabel: check.countryLabel, country: check.country,
         callingCode: check.callingCode, countryName: check.countryName, international: check.international,
-        selected: check.valid && merged.selected };
+        selected: check.valid && (merged.selected ?? true) };
     }));
   };
   const selectAll = (selected: boolean) => {
@@ -186,17 +253,42 @@ export function useCapture() {
     imageRef.current = null; setImageUri(null); setText(''); setCandidates([]);
     setOutcomes([]); setPhase('idle'); setNotice(null); setError(null);
   };
-  const action = async (id: string, kind: 'copy' | 'call' | 'whatsapp') => {
+  const action = async (id: string, kind: 'copy' | 'call' | 'whatsapp' | 'email' | 'website') => {
     const row = candidates.find(c => c.id === id);
     if (!row) return;
-    const checked = validateNumber(row.number, countryRef.current);
+    if (kind === 'email') {
+      if (!row.email) return;
+      try {
+        await Linking.openURL(`mailto:${encodeURIComponent(row.email.trim())}`);
+        setNotice(R.emailOpened);
+      } catch {
+        setError(R.emailFailed);
+      }
+      return;
+    }
+    if (kind === 'website') {
+      if (!row.website) return;
+      const url = /^https?:\/\//i.test(row.website.trim())
+        ? row.website.trim()
+        : `https://${row.website.trim()}`;
+      try {
+        await Linking.openURL(url);
+        setNotice(R.websiteOpened);
+      } catch {
+        setError(R.websiteFailed);
+      }
+      return;
+    }
+    const checked = row.number ? validateNumber(row.number, countryRef.current) : { valid: false, e164: '', extension: undefined };
     if (kind !== 'copy' && !checked.valid) { setError(R.correctNumber); return; }
     try {
       if (kind === 'copy') {
-        const copy = prepareNumberCopy(row.number, countryRef.current);
-        if (!copy.text) { setError(R.correctNumber); return; }
-        await Clipboard.setStringAsync(copy.text);
-        setNotice(copy.valid ? R.copied : R.copiedUnvalidated);
+        const copyText = row.number
+          ? prepareNumberCopy(row.number, countryRef.current).text
+          : (row.email || row.website || '');
+        if (!copyText) { setError(R.correctNumber); return; }
+        await Clipboard.setStringAsync(copyText);
+        setNotice(row.number ? (prepareNumberCopy(row.number, countryRef.current).valid ? R.copied : R.copiedUnvalidated) : R.copied);
       } else {
         const url = kind === 'call'
           ? `tel:${checked.e164}${checked.extension ? `,${checked.extension}` : ''}`
@@ -210,6 +302,35 @@ export function useCapture() {
         : R.clipboardFailed);
     }
   };
+
+  const toggleQuickCapture = async () => {
+    if (busy.current) return;
+    setError(null);
+    setNotice(null);
+
+    if (quickCaptureActive) {
+      device.stopQuickCapture();
+      setQuickCaptureActive(false);
+      setNotice(R.quickCaptureStopped);
+      return;
+    }
+
+    const hasPermission = device.hasOverlayPermission();
+    if (!hasPermission) {
+      setNotice(R.overlayPermissionNeeded);
+      await device.requestOverlayPermission();
+      return;
+    }
+
+    const started = await device.startQuickCapture();
+    if (started) {
+      setQuickCaptureActive(true);
+      setNotice(R.quickCaptureStarted);
+    } else {
+      setError(R.quickCaptureFailed);
+    }
+  };
+
   const openSettings = async () => {
     try {
       if (Platform.OS === 'web') { setNotice(R.browserSettings); return; }
@@ -218,7 +339,9 @@ export function useCapture() {
   };
   return {
     ready, onboarded, country, countries, imageUri, text, candidates, phase, error, notice, outcomes,
-    nativeAvailable: device.nativeAvailable, ocrAvailable: device.ocrAvailable, ocrProgress, completeOnboarding, setCountry, importImage, processText,
+    nativeAvailable: device.nativeAvailable, ocrAvailable: device.ocrAvailable, ocrProgress,
+    quickCaptureAvailable: device.quickCaptureAvailable, quickCaptureActive, toggleQuickCapture,
+    completeOnboarding, setCountry, importImage, processText,
     setText, updateCandidate, selectAll, saveSelected, clear, action, openSettings,
     retry: async () => { if (imageRef.current && !busy.current) await processImage(imageRef.current); },
     dismissError: () => { setError(null); },

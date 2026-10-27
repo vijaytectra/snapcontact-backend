@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { extractCandidates, validateNumber, normalizeDigits, countryOptions, prepareNumberCopy } from '../lib/phone.ts';
+import { extractCandidates, validateNumber, normalizeDigits, countryOptions, prepareNumberCopy, extractEmails, extractWebsites } from '../lib/phone.ts';
+
 
 test('multiple international numbers remain independent and get a nearby editable business suggestion', () => {
   const results = extractCandidates('North Star Cafe\n+44 20 7946 0958\n+1 (415) 555-2671', 'US');
@@ -115,3 +116,79 @@ test('a detected country remains visible when small-image OCR leaves uncertain d
   assert.equal(rows[2].selected, false);
   assert.ok(rows.filter((_, i) => i !== 2).every(row => row.valid));
 });
+
+test('extractEmails detects emails across all domain types including OCR spacing and labels', () => {
+  const sample = `
+    Standard: user@example.com
+    Subdomain: support@mail.corp.co.uk.
+    ccTLD: kontakt@firma.pl
+    gTLD: founder@startup.io
+    Modern: hello@creative.design
+    AI: team@agentic.ai
+    OCR spaces: info @ company.org
+    OCR at: sales(at)acme.tech
+    Label: Email: dev@platform.app
+  `;
+  const emails = extractEmails(sample).map(e => e.email);
+  assert.ok(emails.includes('user@example.com'));
+  assert.ok(emails.includes('support@mail.corp.co.uk'));
+  assert.ok(emails.includes('kontakt@firma.pl'));
+  assert.ok(emails.includes('founder@startup.io'));
+  assert.ok(emails.includes('hello@creative.design'));
+  assert.ok(emails.includes('team@agentic.ai'));
+  assert.ok(emails.includes('info@company.org'));
+  assert.ok(emails.includes('sales@acme.tech'));
+  assert.ok(emails.includes('dev@platform.app'));
+});
+
+test('extractWebsites detects websites across all domain types including standalone domains and protocols', () => {
+  const sample = `
+    Visit https://example.com/about.
+    Check out www.company.co.uk
+    Our shop is at store.ai
+    Visit firma.pl for details
+    Design portfolio at creative.design
+    Web: techcorp.io
+    App: https://download.platform.app:8080/get
+  `;
+  const sites = extractWebsites(sample).map(s => s.website);
+  assert.ok(sites.includes('https://example.com/about'));
+  assert.ok(sites.includes('www.company.co.uk'));
+  assert.ok(sites.includes('store.ai'));
+  assert.ok(sites.includes('firma.pl'));
+  assert.ok(sites.includes('creative.design'));
+  assert.ok(sites.includes('techcorp.io'));
+  assert.ok(sites.includes('https://download.platform.app:8080/get'));
+});
+
+test('extractCandidates associates email and website with phone number card across domains', () => {
+  const card = `
+    Krakow Dental Care
+    +48 71 722 11 11
+    reception@krakow-dentist.pl
+    www.krakow-dentist.pl
+  `;
+  const candidates = extractCandidates(card, 'PL');
+  assert.equal(candidates.length, 1);
+  assert.equal(candidates[0].name, 'Krakow Dental Care');
+  assert.equal(candidates[0].formatted, '+48 71 722 11 11');
+  assert.equal(candidates[0].email, 'reception@krakow-dentist.pl');
+  assert.equal(candidates[0].website, 'www.krakow-dentist.pl');
+  assert.equal(candidates[0].valid, true);
+});
+
+test('standalone email and website without phone numbers creates a contact candidate', () => {
+  const card = `
+    Creative Studio Ltd
+    hello@studio.design
+    www.studio.design
+  `;
+  const candidates = extractCandidates(card, 'US');
+  assert.equal(candidates.length, 1);
+  assert.equal(candidates[0].name, 'Creative Studio Ltd');
+  assert.equal(candidates[0].email, 'hello@studio.design');
+  assert.equal(candidates[0].website, 'www.studio.design');
+  assert.equal(candidates[0].valid, true);
+  assert.equal(candidates[0].selected, true);
+});
+

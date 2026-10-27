@@ -6,14 +6,27 @@ import { useColors } from '@/hooks/useColors';
 import { S } from '@/lib/strings';
 import { Checkbox, F, PressScale, tap } from './ui';
 
-export type Cand = { id: string; raw: string; number: string; name: string; selected: boolean; valid: boolean; formatted: string; message: string; extension?: string; countryLabel?: string };
+export type Cand = {
+  id: string;
+  raw: string;
+  number: string;
+  name: string;
+  email?: string;
+  website?: string;
+  selected: boolean;
+  valid: boolean;
+  formatted: string;
+  message: string;
+  extension?: string;
+  countryLabel?: string;
+};
 
 function Act({ icon, label, onPress, disabled, id }: { icon: React.ComponentProps<typeof Ionicons>['name']; label: string; onPress: () => void; disabled?: boolean; id: string }) {
   const c = useColors();
   return (
     <PressScale testID={id} accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled: !!disabled }} disabled={disabled}
       onPress={() => { tap(); onPress(); }}
-      style={{ minHeight: 44, flex: 1, borderRadius: 12, backgroundColor: c.muted, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, opacity: disabled ? 0.4 : 1, paddingHorizontal: 6 }}>
+      style={{ minHeight: 44, flex: 1, minWidth: 72, borderRadius: 12, backgroundColor: c.muted, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, opacity: disabled ? 0.4 : 1, paddingHorizontal: 6 }}>
       <Ionicons name={icon} size={18} color={c.foreground} />
       <Text numberOfLines={1} style={{ fontFamily: F.m, fontSize: 14, color: c.foreground }}>{label}</Text>
     </PressScale>
@@ -22,8 +35,8 @@ function Act({ icon, label, onPress, disabled, id }: { icon: React.ComponentProp
 
 export function CandidateCard({ cand, index, onChange, onAction }: {
   cand: Cand; index: number;
-  onChange: (patch: { number?: string; name?: string; selected?: boolean }) => void;
-  onAction: (a: 'copy' | 'call' | 'whatsapp') => void;
+  onChange: (patch: { number?: string; name?: string; email?: string; website?: string; selected?: boolean }) => void;
+  onAction: (a: 'copy' | 'call' | 'whatsapp' | 'email' | 'website') => void;
 }) {
   const c = useColors();
   const bad = !cand.valid;
@@ -56,11 +69,22 @@ export function CandidateCard({ cand, index, onChange, onAction }: {
           <Text style={{ fontFamily: F.s, fontSize: 14, color: c.primary }}>{cand.formatted}</Text>
         ) : null}
       </View>
-      <View style={{ flexDirection: 'row', gap: 8 }}>
-        <Act id={`copy-${cand.id}`} icon="copy-outline" label={S.review.copy} onPress={() => onAction('copy')} disabled={!cand.number.trim()} />
-        <Act id={`call-${cand.id}`} icon="call-outline" label={S.review.call} onPress={() => onAction('call')} disabled={bad} />
-        <Act id={`wa-${cand.id}`} icon="logo-whatsapp" label={S.review.whatsapp} onPress={() => onAction('whatsapp')} disabled={bad} />
+      <View style={{ gap: 6 }}>
+        <Text style={{ fontFamily: F.m, fontSize: 13, color: c.mutedForeground }}>{S.review.email}</Text>
+        <TextInput testID={`email-${cand.id}`} accessibilityLabel={`${S.review.email}, number ${index + 1}`} value={cand.email ?? ''} onChangeText={(t) => onChange({ email: t })} placeholder={S.review.emailPlaceholder} placeholderTextColor={c.mutedForeground} keyboardType="email-address" autoCapitalize="none" autoCorrect={false} style={[input, { borderColor: c.border }]} />
+      </View>
+      <View style={{ gap: 6 }}>
+        <Text style={{ fontFamily: F.m, fontSize: 13, color: c.mutedForeground }}>{S.review.website}</Text>
+        <TextInput testID={`website-${cand.id}`} accessibilityLabel={`${S.review.website}, number ${index + 1}`} value={cand.website ?? ''} onChangeText={(t) => onChange({ website: t })} placeholder={S.review.websitePlaceholder} placeholderTextColor={c.mutedForeground} keyboardType="url" autoCapitalize="none" autoCorrect={false} style={[input, { borderColor: c.border }]} />
+      </View>
+      <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+        <Act id={`copy-${cand.id}`} icon="copy-outline" label={S.review.copy} onPress={() => onAction('copy')} disabled={!cand.number.trim() && !cand.email && !cand.website} />
+        {cand.number ? <Act id={`call-${cand.id}`} icon="call-outline" label={S.review.call} onPress={() => onAction('call')} disabled={bad} /> : null}
+        {cand.number ? <Act id={`wa-${cand.id}`} icon="logo-whatsapp" label={S.review.whatsapp} onPress={() => onAction('whatsapp')} disabled={bad} /> : null}
+        {cand.email ? <Act id={`mail-${cand.id}`} icon="mail-outline" label={S.review.mail} onPress={() => onAction('email')} /> : null}
+        {cand.website ? <Act id={`web-${cand.id}`} icon="globe-outline" label={S.review.web} onPress={() => onAction('website')} /> : null}
       </View>
     </Animated.View>
   );
 }
+

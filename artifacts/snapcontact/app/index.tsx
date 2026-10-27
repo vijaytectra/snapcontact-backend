@@ -112,6 +112,36 @@ export default function Index() {
             <Text style={{ fontFamily: F.r, fontSize: 14, color: c.mutedForeground }}>{S.home.cameraHint}</Text>
           </View>
         </PressScale>
+        {cap.quickCaptureAvailable ? (
+          <PressScale testID="toggle-quick-capture" accessibilityRole="button" accessibilityLabel={S.home.quickCapture} accessibilityHint={S.home.quickCaptureHint}
+            onPress={() => { tap('medium'); void cap.toggleQuickCapture(); }}
+            style={{
+              backgroundColor: cap.quickCaptureActive ? c.primary : c.card,
+              borderWidth: 1,
+              borderColor: cap.quickCaptureActive ? c.primary : c.border,
+              borderRadius: 20,
+              padding: 18,
+              minHeight: 72,
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 14,
+            }}>
+            <Ionicons name={cap.quickCaptureActive ? "radio-button-on" : "layers-outline"} size={26} color={cap.quickCaptureActive ? c.accent : c.primary} />
+            <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Text style={{ fontFamily: F.s, fontSize: 17, color: cap.quickCaptureActive ? c.primaryForeground : c.foreground }}>{S.home.quickCapture}</Text>
+                {cap.quickCaptureActive ? (
+                  <View style={{ backgroundColor: c.accent, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 }}>
+                    <Text style={{ fontFamily: F.b, fontSize: 11, color: c.accentForeground }}>{S.home.quickCaptureActiveBadge}</Text>
+                  </View>
+                ) : null}
+              </View>
+              <Text style={{ fontFamily: F.r, fontSize: 14, color: cap.quickCaptureActive ? c.primaryForeground : c.mutedForeground, opacity: cap.quickCaptureActive ? 0.85 : 1 }}>
+                {cap.quickCaptureActive ? S.home.quickCaptureTapToStop : S.home.quickCaptureHint}
+              </Text>
+            </View>
+          </PressScale>
+        ) : null}
       </Animated.View>
 
       <Animated.View entering={FadeInDown.delay(240).duration(500)} style={{ gap: 10, marginTop: 12 }}>

@@ -34,6 +34,17 @@ export const R = {
   whatsappFailed: 'WhatsApp could not open. Install it, or copy the number instead.',
   dialerFailed: 'No phone app could open this number. You can copy it instead.',
   clipboardFailed: 'Clipboard access failed. Select and copy the number manually.',
+  emailOpened: 'Opened email app.',
+  emailFailed: 'Could not open email app. You can copy the address instead.',
+  websiteOpened: 'Opened website.',
+  websiteFailed: 'Could not open website. You can copy the address instead.',
   browserSettings: 'Use your browser site settings for camera permissions. Native settings are available in the installed app.',
   settingsFailed: 'Settings could not open. Open your device settings and find SnapContact.',
+  quickCaptureStarted: 'Quick Capture active. Tap the floating button over any app to capture contacts.',
+  quickCaptureStopped: 'Quick Capture stopped.',
+  quickCaptureDenied: 'Screen capture permission was denied.',
+  overlayPermissionNeeded: 'Allow SnapContact to display over other apps in Android Settings.',
+  quickCaptureFailed: 'Quick Capture failed to start.',
+  screenCaptured: 'Screen captured and contacts recognized.',
 };
+

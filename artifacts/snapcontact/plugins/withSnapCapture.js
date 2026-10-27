@@ -29,6 +29,21 @@ function withSnapCapture(config) {
     const manifest = mod.modResults.manifest;
     const application = manifest.application[0];
     application.$['android:allowBackup'] = 'false';
+
+    const permissions = manifest['uses-permission'] ?? [];
+    const neededPermissions = [
+      'android.permission.SYSTEM_ALERT_WINDOW',
+      'android.permission.FOREGROUND_SERVICE',
+      'android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION',
+      'android.permission.POST_NOTIFICATIONS',
+    ];
+    for (const name of neededPermissions) {
+      if (!permissions.some(p => p.$['android:name'] === name)) {
+        permissions.push({ $: { 'android:name': name } });
+      }
+    }
+    manifest['uses-permission'] = permissions;
+
     const main = application.activity.find(item => item.$['android:name'] === '.MainActivity');
     if (!main) throw new Error('SnapContact Android MainActivity was not found.');
     main.$['android:launchMode'] = 'singleTask';
@@ -40,8 +55,32 @@ function withSnapCapture(config) {
       category: [{ $: { 'android:name': 'android.intent.category.DEFAULT' } }],
       data: [{ $: { 'android:mimeType': 'image/*' } }],
     });
+
+    application.service = application.service ?? [];
+    if (!application.service.some(s => s.$['android:name'] === 'com.snapcontact.capture.QuickCaptureService')) {
+      application.service.push({
+        $: {
+          'android:name': 'com.snapcontact.capture.QuickCaptureService',
+          'android:foregroundServiceType': 'mediaProjection',
+          'android:exported': 'false',
+        },
+      });
+    }
+
+    application.activity = application.activity ?? [];
+    if (!application.activity.some(a => a.$['android:name'] === 'com.snapcontact.capture.MediaProjectionConsentActivity')) {
+      application.activity.push({
+        $: {
+          'android:name': 'com.snapcontact.capture.MediaProjectionConsentActivity',
+          'android:theme': '@android:style/Theme.Translucent.NoTitleBar',
+          'android:exported': 'false',
+        },
+      });
+    }
+
     return mod;
   });
+
   return withXcodeProject(config, mod => {
     const project = mod.modResults;
     const root = mod.modRequest.platformProjectRoot;
