@@ -14,8 +14,9 @@ type NativeCapture = {
 const native = Platform.OS === 'web' ? null :
   requireOptionalNativeModule<NativeCapture>('SnapCapture');
 export const nativeAvailable = !!native;
+export const ocrAvailable = !!native;
 
-export async function recognize(uri: string) {
+export async function recognize(uri: string, _progress?: (value: number) => void) {
   if (!native) throw new Error(R.ocrNativeOnly);
   return native.recognize(uri);
 }

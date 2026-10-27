@@ -1,1 +1,2 @@
 - [Expo security compatibility](expo-security-compatibility.md) — distinguish runtime routing risks from CLI-only findings; avoid untested module-format and Zod-major overrides.
+- [Preview OCR privacy](preview-ocr-privacy.md) — browser OCR may download engine assets, never upload capture data; do not promise first-run browser offline support.

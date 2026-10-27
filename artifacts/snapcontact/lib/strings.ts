@@ -24,7 +24,8 @@ export const S = {
     country: 'Default country',
     countryHint: 'Used for numbers without a country code',
     privacy: 'Works offline on your device. Nothing is uploaded.',
-    webNote: 'Preview mode: paste text to find and copy real numbers. Image reading, share intake and contact saving need the installed native build.',
+    browserPrivacy: 'Images stay in your browser. Internet is needed to download the OCR engine and English model.',
+    webNote: 'Preview image reading runs locally in your browser. The first scan downloads the OCR engine and English model; your image is never uploaded. Share intake and native contact saving need the installed app.',
     settings: 'Privacy and help',
   },
   review: {
@@ -49,6 +50,7 @@ export const S = {
     rescan: 'Scan this text again',
     processing: 'Reading the image',
     processingBody: 'Looking for phone numbers on your device.',
+    browserProcessing: (percent: number) => `Reading locally in your browser${percent ? ` · ${percent}%` : ''}. The first scan may take a moment to download the OCR engine and English model. No image is uploaded.`,
     emptyTitle: 'No phone number found',
     emptyBody: 'Try a sharper photo, crop closer to the number, or edit the text below and scan again.',
     previewManualBody: 'Image reading needs the installed app. Paste or type the text from your image below to find numbers.',

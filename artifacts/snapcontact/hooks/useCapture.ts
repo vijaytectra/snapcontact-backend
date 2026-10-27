@@ -26,6 +26,7 @@ export function useCapture() {
   const [text, setText] = useState('');
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [phase, setPhase] = useState<Phase>('idle');
+  const [ocrProgress, setOcrProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [outcomes, setOutcomes] = useState<Outcome[]>([]);
@@ -46,9 +47,11 @@ export function useCapture() {
     imageRef.current = uri;
     setImageUri(uri);
     if (previous !== uri) void device.deleteTemporaryImage(previous);
-    setPhase('processing'); setError(null); setNotice(null); setOutcomes([]); setCandidates([]); setText('');
+    setPhase('processing'); setOcrProgress(0); setError(null); setNotice(null); setOutcomes([]); setCandidates([]); setText('');
     try {
-      const recognized = await device.recognize(uri);
+      const recognized = await device.recognize(uri, value => {
+        if (ticket === generation.current) setOcrProgress(value);
+      });
       if (ticket !== generation.current) return;
       setText(recognized);
       setCandidates(extractCandidates(recognized, countryRef.current));
@@ -209,7 +212,7 @@ export function useCapture() {
   };
   return {
     ready, onboarded, country, countries, imageUri, text, candidates, phase, error, notice, outcomes,
-    nativeAvailable: device.nativeAvailable, completeOnboarding, setCountry, importImage, processText,
+    nativeAvailable: device.nativeAvailable, ocrAvailable: device.ocrAvailable, ocrProgress, completeOnboarding, setCountry, importImage, processText,
     setText, updateCandidate, selectAll, saveSelected, clear, action, openSettings,
     retry: async () => { if (imageRef.current && !busy.current) await processImage(imageRef.current); },
     dismissError: () => { setError(null); },

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Image, Keyboard, Pressable, Text, TextInput, View } from 'react-native';
+import { Image, Keyboard, Platform, Pressable, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { StatusBar } from 'expo-status-bar';
@@ -13,7 +13,6 @@ import { CountrySheet } from '@/components/CountrySheet';
 import { SettingsModal } from '@/components/SettingsModal';
 import { SaveSummary } from '@/components/SaveSummary';
 import { CandidateCard } from '@/components/CandidateCard';
-import { R } from '@/lib/runtimeStrings';
 
 export default function Index() {
   const cap = useCapture();
@@ -25,7 +24,7 @@ export default function Index() {
   const [dismissed, setDismissed] = useState<unknown>(null);
 
   useEffect(() => {
-    if (cap.imageUri && cap.error === R.ocrNativeOnly) setRawOpen(true);
+    if (cap.imageUri && cap.error) setRawOpen(true);
   }, [cap.error, cap.imageUri]);
 
   if (!cap.ready) {
@@ -42,7 +41,7 @@ export default function Index() {
   const countryName = cap.countries.find((o) => o.code === cap.country);
   const reviewing = cap.phase !== 'idle' || cap.candidates.length > 0 || !!cap.imageUri;
   const saving = cap.phase === 'saving';
-  const nativeOcrUnavailable = !!cap.imageUri && !cap.nativeAvailable;
+  const nativeOcrUnavailable = !!cap.imageUri && !cap.ocrAvailable;
   const selected = cap.candidates.filter((x) => x.selected);
   const canSave = selected.length > 0 && selected.every((x) => x.valid) && cap.nativeAvailable && !saving;
   // Never present a React Native Modal over the OS contact editor. It competes
@@ -65,7 +64,7 @@ export default function Index() {
 
   const messages = (
     <>
-      {cap.error ? <Banner testID="error-banner" kind="error" text={cap.error} onDismiss={cap.dismissError} action={cap.imageUri && cap.nativeAvailable ? { label: S.review.retry, onPress: () => { cap.retry(); } } : undefined} /> : null}
+      {cap.error ? <Banner testID="error-banner" kind="error" text={cap.error} onDismiss={cap.dismissError} action={cap.imageUri && cap.ocrAvailable ? { label: S.review.retry, onPress: () => { cap.retry(); } } : undefined} /> : null}
       {cap.notice ? <Banner testID="notice-banner" kind="notice" text={cap.notice} /> : null}
     </>
   );
@@ -121,9 +120,9 @@ export default function Index() {
       </Animated.View>
 
       <View style={{ marginTop: 12 }}>{countryChip}</View>
-      <Animated.View entering={FadeIn.delay(400)} style={{ flexDirection: 'row', gap: 10, alignItems: 'center', marginTop: 4 }} accessible accessibilityLabel={S.home.privacy}>
+      <Animated.View entering={FadeIn.delay(400)} style={{ flexDirection: 'row', gap: 10, alignItems: 'center', marginTop: 4 }} accessible accessibilityLabel={Platform.OS === 'web' ? S.home.browserPrivacy : S.home.privacy}>
         <Ionicons name="lock-closed" size={16} color={c.mutedForeground} />
-        <Text style={{ flex: 1, fontFamily: F.r, fontSize: 13, lineHeight: 18, color: c.mutedForeground }}>{S.home.privacy}</Text>
+        <Text style={{ flex: 1, fontFamily: F.r, fontSize: 13, lineHeight: 18, color: c.mutedForeground }}>{Platform.OS === 'web' ? S.home.browserPrivacy : S.home.privacy}</Text>
       </Animated.View>
       {!cap.nativeAvailable ? <Banner kind="notice" testID="web-note" text={S.home.webNote} /> : null}
     </>
@@ -155,7 +154,7 @@ export default function Index() {
 
       {cap.phase === 'processing' ? (
         <View testID="processing" accessibilityLabel={S.review.processingBody} style={{ gap: 12 }}>
-          <Text style={{ fontFamily: F.r, fontSize: 15, color: c.mutedForeground }}>{S.review.processingBody}</Text>
+          <Text accessibilityLiveRegion="polite" style={{ fontFamily: F.r, fontSize: 15, color: c.mutedForeground }}>{Platform.OS === 'web' ? S.review.browserProcessing(Math.round(cap.ocrProgress * 100)) : S.review.processingBody}</Text>
           <Skeleton h={190} /><Skeleton h={190} />
         </View>
       ) : cap.candidates.length === 0 ? (
@@ -164,7 +163,7 @@ export default function Index() {
           <Text style={{ fontFamily: F.b, fontSize: 19, color: c.foreground }}>{S.review.emptyTitle}</Text>
           <Text style={{ fontFamily: F.r, fontSize: 15, lineHeight: 22, color: c.mutedForeground }}>{nativeOcrUnavailable ? S.review.previewManualBody : S.review.emptyBody}</Text>
           <View style={{ marginTop: 6, gap: 10 }}>
-            {cap.imageUri && cap.nativeAvailable ? <Button testID="retry" label={S.review.retry} icon="refresh" onPress={() => { cap.retry(); }} /> : null}
+            {cap.imageUri && cap.ocrAvailable ? <Button testID="retry" label={S.review.retry} icon="refresh" onPress={() => { cap.retry(); }} /> : null}
             <Button testID="try-again" label={S.review.tryAgain} variant="secondary" onPress={cap.clear} />
           </View>
         </Animated.View>
