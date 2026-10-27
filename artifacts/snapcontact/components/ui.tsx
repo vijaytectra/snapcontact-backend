@@ -81,14 +81,15 @@ export function IconButton({ icon, label, onPress, testID, disabled, color }: { 
   );
 }
 
-export function Checkbox({ checked, onChange, label, testID }: { checked: boolean; onChange: (v: boolean) => void; label: string; testID?: string }) {
+export function Checkbox({ checked, onChange, label, testID, disabled = false }: { checked: boolean; onChange: (v: boolean) => void; label: string; testID?: string; disabled?: boolean }) {
   const c = useColors();
   return (
     <Pressable
       testID={testID}
       accessibilityRole="checkbox"
       accessibilityLabel={label}
-      accessibilityState={{ checked }}
+      accessibilityState={{ checked, disabled }}
+      disabled={disabled}
       onPress={() => { tap(); onChange(!checked); }}
       style={{ width: 48, height: 48, alignItems: 'center', justifyContent: 'center' }}
     >

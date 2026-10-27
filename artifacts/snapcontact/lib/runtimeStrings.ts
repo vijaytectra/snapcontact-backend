@@ -28,6 +28,7 @@ export const R = {
   cleanupFailed: 'A temporary image could not be removed. The operating system will clear its cache.',
   correctNumber: 'Correct the number before using this action.',
   copied: 'Number copied. It is now available to other apps through your clipboard.',
+  copiedUnvalidated: 'Copied as entered, without validating or changing the digits. This may not be a working number. The text is now available to other apps through your clipboard.',
   whatsappOpened: 'Opened WhatsApp. No message is sent automatically; an account may not exist for this number.',
   dialerOpened: 'Opened the system dialer. No call is placed automatically.',
   whatsappFailed: 'WhatsApp could not open. Install it, or copy the number instead.',

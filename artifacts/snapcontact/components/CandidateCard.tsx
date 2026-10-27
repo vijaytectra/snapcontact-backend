@@ -32,7 +32,7 @@ export function CandidateCard({ cand, index, onChange, onAction }: {
     <Animated.View entering={FadeInDown.delay(Math.min(index, 6) * 70).duration(380)} testID={`candidate-${cand.id}`}
       style={{ backgroundColor: c.card, borderRadius: 20, borderWidth: 1, borderColor: cand.selected ? c.primary : c.border, padding: 14, paddingTop: 6, gap: 10 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-        <Checkbox testID={`select-${cand.id}`} checked={cand.selected} onChange={(v) => onChange({ selected: v })} label={`Select number ${index + 1}${cand.name ? ', ' + cand.name : ''}`} />
+        <Checkbox testID={`select-${cand.id}`} checked={cand.selected} disabled={bad} onChange={(v) => onChange({ selected: v })} label={`Select number ${index + 1}${cand.name ? ', ' + cand.name : ''}`} />
         <Text style={{ flex: 1, fontFamily: F.s, fontSize: 13, letterSpacing: 0.6, color: c.mutedForeground, textTransform: 'uppercase' }}>
           {`Number ${index + 1}`}{cand.extension ? `  ·  ${S.review.ext(cand.extension)}` : ''}
         </Text>
@@ -57,7 +57,7 @@ export function CandidateCard({ cand, index, onChange, onAction }: {
         ) : null}
       </View>
       <View style={{ flexDirection: 'row', gap: 8 }}>
-        <Act id={`copy-${cand.id}`} icon="copy-outline" label={S.review.copy} onPress={() => onAction('copy')} disabled={bad} />
+        <Act id={`copy-${cand.id}`} icon="copy-outline" label={S.review.copy} onPress={() => onAction('copy')} disabled={!cand.number.trim()} />
         <Act id={`call-${cand.id}`} icon="call-outline" label={S.review.call} onPress={() => onAction('call')} disabled={bad} />
         <Act id={`wa-${cand.id}`} icon="logo-whatsapp" label={S.review.whatsapp} onPress={() => onAction('whatsapp')} disabled={bad} />
       </View>

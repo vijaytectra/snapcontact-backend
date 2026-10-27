@@ -5,7 +5,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as Clipboard from 'expo-clipboard';
 import { getLocales } from 'expo-localization';
 import { getCountries, type CountryCode } from 'libphonenumber-js/max';
-import { countryOptions, extractCandidates, validateNumber, type Candidate, type CountryOption } from '@/lib/phone';
+import { countryOptions, extractCandidates, prepareNumberCopy, validateNumber, type Candidate, type CountryOption } from '@/lib/phone';
 import * as device from '@/lib/device';
 import { runContactQueue } from '@/lib/contactQueue';
 import { R } from '@/lib/runtimeStrings';
@@ -186,11 +186,13 @@ export function useCapture() {
     const row = candidates.find(c => c.id === id);
     if (!row) return;
     const checked = validateNumber(row.number, countryRef.current);
-    if (!checked.valid) { setError(R.correctNumber); return; }
+    if (kind !== 'copy' && !checked.valid) { setError(R.correctNumber); return; }
     try {
       if (kind === 'copy') {
-        await Clipboard.setStringAsync(checked.e164 + (checked.extension ? ` ext. ${checked.extension}` : ''));
-        setNotice(R.copied);
+        const copy = prepareNumberCopy(row.number, countryRef.current);
+        if (!copy.text) { setError(R.correctNumber); return; }
+        await Clipboard.setStringAsync(copy.text);
+        setNotice(copy.valid ? R.copied : R.copiedUnvalidated);
       } else {
         const url = kind === 'call'
           ? `tel:${checked.e164}${checked.extension ? `,${checked.extension}` : ''}`

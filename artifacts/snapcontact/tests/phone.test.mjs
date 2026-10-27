@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { extractCandidates, validateNumber, normalizeDigits, countryOptions } from '../lib/phone.ts';
+import { extractCandidates, validateNumber, normalizeDigits, countryOptions, prepareNumberCopy } from '../lib/phone.ts';
 
 test('multiple international numbers remain independent and get a nearby editable business suggestion', () => {
   const results = extractCandidates('North Star Cafe\n+44 20 7946 0958\n+1 (415) 555-2671', 'US');
@@ -79,4 +79,20 @@ test('local numbers disclose fallback country instead of claiming country detect
   assert.equal(result.valid, true);
   assert.match(result.countryLabel, /Using default country: India.*\+91/);
   assert.equal(validateNumber('011 44 20 7946 0958', 'US').countryLabel.includes('United Kingdom'), true);
+});
+
+test('copying invalid/example numbers preserves the entered digits and leaves validation blocked', () => {
+  const raw = '+1 (555) 123-4567';
+  assert.deepEqual(prepareNumberCopy(raw, 'IN'), { text: raw, valid: false });
+  const uncertain = '+44 2O 7946 O958';
+  assert.deepEqual(prepareNumberCopy(uncertain, 'GB'), { text: uncertain, valid: false });
+  const row = extractCandidates(raw, 'IN')[0];
+  assert.equal(row.valid, false);
+  assert.equal(row.selected, false);
+  assert.equal(prepareNumberCopy('   ', 'US').text, '');
+});
+test('copying valid numbers retains international normalization and extensions', () => {
+  assert.deepEqual(prepareNumberCopy('020 7946 0958 ext 42', 'GB'), {
+    text: '+442079460958 ext. 42', valid: true,
+  });
 });

@@ -78,6 +78,17 @@ export function validateNumber(raw: string, country: CountryCode) {
   };
 }
 
+/** Copy unvalidated input as text without inventing or normalizing its digits. */
+export function prepareNumberCopy(raw: string, country: CountryCode) {
+  const check = validateNumber(raw, country);
+  return {
+    text: check.valid
+      ? check.e164 + (check.extension ? ` ext. ${check.extension}` : '')
+      : raw.trim(),
+    valid: check.valid,
+  };
+}
+
 function nearbyName(text: string, offset: number): string {
   const before = text.slice(0, offset).split('\n');
   const sameLine = before.at(-1)?.replace(/(?:tel(?:ephone)?|phone|mobile|call|fax|whatsapp|contact)\s*[:：]?\s*$/i, '').trim() ?? '';

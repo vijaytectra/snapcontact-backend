@@ -16,3 +16,13 @@ for mixed-country images. Show shared-code ambiguity honestly, retain validation
 for invalid/example numbers, and use the selected default only when the image
 does not supply enough country information. Never invent a country or digits
 merely to remove a warning.
+
+Invalid-number handling is **copy only**, as explicitly chosen by the user.
+Permit copying the entered text without changing its digits, retain the warning,
+and keep selection, saving, calls and WhatsApp blocked.
+
+**Why:** Users may need to retain OCR text even when it is not a valid callable
+number. Copying text must not imply successful validation or authorize dialing.
+
+**How to apply:** Preserve the unvalidated input for copying and label that
+outcome honestly. Continue normal international formatting for validated numbers.
