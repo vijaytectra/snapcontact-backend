@@ -96,3 +96,22 @@ test('copying valid numbers retains international normalization and extensions',
     text: '+442079460958 ext. 42', valid: true,
   });
 });
+
+test('one image can contain six countries, including distinct US and Canadian +1 numbers', () => {
+  const text = '+1 (415) 366-1222\n+49 157 35994222\n+48 71 722 11 11\n+44 20 8089 0200\n+55 21 3812 8522\n+1 647 558 6333';
+  for (const defaultCountry of ['IN', 'AI', 'JP']) {
+    const rows = extractCandidates(text, defaultCountry);
+    assert.equal(rows.length, 6);
+    assert.deepEqual(rows.map(row => row.country), ['US', 'DE', 'PL', 'GB', 'BR', 'CA']);
+    assert.deepEqual(rows.map(row => row.callingCode), ['1', '49', '48', '44', '55', '1']);
+    assert.ok(rows.every(row => row.valid && row.international));
+  }
+});
+test('a detected country remains visible when small-image OCR leaves uncertain digits', () => {
+  const rows = extractCandidates('+1 (415) 366-1222\n+49 157 35994222\n+48 7172211 M\n+44 20 8089 0200\n+55 213812 8522\n+1 647 558 6333', 'AI');
+  assert.equal(rows.length, 6);
+  assert.deepEqual(rows.map(row => row.country), ['US', 'DE', 'PL', 'GB', 'BR', 'CA']);
+  assert.equal(rows[2].valid, false);
+  assert.equal(rows[2].selected, false);
+  assert.ok(rows.filter((_, i) => i !== 2).every(row => row.valid));
+});

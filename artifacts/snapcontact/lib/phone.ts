@@ -18,6 +18,10 @@ export type Candidate = {
   message: string;
   extension?: string;
   countryLabel?: string;
+  country?: CountryCode;
+  callingCode?: string;
+  countryName?: string;
+  international?: boolean;
 };
 export type CountryOption = { code: CountryCode; name: string; callingCode: string };
 
@@ -51,6 +55,7 @@ export function validateNumber(raw: string, country: CountryCode) {
   const international = input.startsWith('+') || (phone &&
     (phone.countryCallingCode !== getCountryCallingCode(country) || /^(?:00|011)/.test(input)));
   let countryLabel = '';
+  let countryName = '';
   if (phone) {
     const region = international ? phone.country : country;
     let regionName = region ?? '';
@@ -61,20 +66,25 @@ export function validateNumber(raw: string, country: CountryCode) {
     countryLabel = international
       ? R.detectedCallingCode(regionName || (phone.countryCallingCode === '1' ? R.northAmericaShared : R.countryUndetermined), phone.countryCallingCode)
       : R.defaultCallingCode(regionName, phone.countryCallingCode);
+    countryName = regionName || (phone.countryCallingCode === '1' ? R.northAmericaShared : R.countryUndetermined);
   }
+  const detection = {
+    countryLabel, countryName, country: phone?.country,
+    callingCode: phone?.countryCallingCode, international: !!international,
+  };
   if (!phone || !phone.isPossible()) return {
     valid: false, formatted: input, e164: '', extension: undefined,
-    message: R.checkDigits, countryLabel,
+    message: R.checkDigits, ...detection,
   };
   if (!phone.isValid()) return {
     valid: false, formatted: phone.formatInternational(), e164: '',
-    extension: phone.ext, countryLabel,
+    extension: phone.ext, ...detection,
     message: phone.countryCallingCode === '1' && phone.nationalNumber.startsWith('555')
       ? R.exampleAreaCode : R.invalidPlan,
   };
   return {
     valid: true, formatted: phone.formatInternational(), e164: String(phone.number),
-    extension: phone.ext, message: '', countryLabel,
+    extension: phone.ext, message: '', ...detection,
   };
 }
 
@@ -131,6 +141,8 @@ export function extractCandidates(source: string, country: CountryCode): Candida
       valid: check.valid, formatted: check.formatted,
       message: check.message, extension: check.extension,
       countryLabel: check.countryLabel,
+      country: check.country, callingCode: check.callingCode,
+      countryName: check.countryName, international: check.international,
     }];
   });
 }

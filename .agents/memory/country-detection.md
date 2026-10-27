@@ -26,3 +26,13 @@ number. Copying text must not imply successful validation or authorize dialing.
 
 **How to apply:** Preserve the unvalidated input for copying and label that
 outcome honestly. Continue normal international formatting for validated numbers.
+
+Number-plan validity is not proof that OCR captured the original digits exactly.
+Keep the review step even for valid results.
+
+**Why:** Low-resolution runs of narrow repeated digits can be dropped or merged
+by OCR. Scaling and segmentation help, but cannot justify inventing missing digits.
+
+**How to apply:** Separate country-prefix detection, OCR fidelity and structural
+number validity. Preserve uncertainty and offer better source images or explicit
+correction rather than silent digit substitution.

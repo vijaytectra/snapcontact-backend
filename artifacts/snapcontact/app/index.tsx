@@ -48,6 +48,11 @@ export default function Index() {
   // for iOS presentation and can hide the editor or break delegate completion.
   const showSummary = !saving && cap.outcomes.length > 0 && dismissed !== cap.outcomes;
   const allSelected = cap.candidates.length > 0 && cap.candidates.every((x) => x.selected);
+  const detectedCountries = [...new Map(cap.candidates
+    .filter(row => row.international && row.callingCode)
+    .map(row => [row.country || `calling-${row.callingCode}`, {
+      name: row.countryName, code: row.callingCode,
+    }])).values()];
 
   const countryChip = (
     <PressScale testID="country-chip" accessibilityRole="button" accessibilityLabel={`${S.home.country}: ${countryName?.name ?? cap.country}. ${S.home.countryHint}`}
@@ -150,7 +155,16 @@ export default function Index() {
           ) : null}
         </View>
       </View>
-      {countryChip}
+      {detectedCountries.length > 0 ? (
+        <View testID="detected-countries" style={{ padding: 16, gap: 8, borderRadius: 16, backgroundColor: c.card, borderWidth: 1, borderColor: c.border }}>
+          <Text style={{ fontFamily: F.s, fontSize: 16, color: c.foreground }}>{S.review.detectedCountries}</Text>
+          <Text style={{ fontFamily: F.r, fontSize: 14, lineHeight: 21, color: c.mutedForeground }}>
+            {detectedCountries.map(region => `${region.name} +${region.code}`).join(' · ')}
+          </Text>
+          <Text style={{ fontFamily: F.r, fontSize: 13, color: c.mutedForeground }}>{S.review.mixedCountryHint}</Text>
+        </View>
+      ) : null}
+      {detectedCountries.length === 0 || cap.candidates.some(row => !row.international) ? countryChip : null}
 
       {cap.phase === 'processing' ? (
         <View testID="processing" accessibilityLabel={S.review.processingBody} style={{ gap: 12 }}>

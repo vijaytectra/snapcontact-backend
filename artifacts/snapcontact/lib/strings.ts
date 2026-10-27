@@ -30,6 +30,8 @@ export const S = {
   },
   review: {
     title: 'Review',
+    detectedCountries: 'Countries and calling codes detected',
+    mixedCountryHint: 'Each number uses its own country code. No need to change one country for the whole image. Check any flagged digits before using a number.',
     found: (n: number) => (n === 1 ? '1 number found' : `${n} numbers found`),
     selectAll: 'Select all',
     selectNone: 'Select none',

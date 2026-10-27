@@ -47,7 +47,10 @@ export async function recognizeBrowserImage(uri: string, progress?: (value: numb
     });
     image.src = uri;
     await loaded;
-    const scale = Math.min(1, 4096 / Math.max(image.naturalWidth, image.naturalHeight));
+    const longestEdge = Math.max(image.naturalWidth, image.naturalHeight);
+    // Small screenshots often contain tiny digits and plus signs. Enlarge before
+    // segmentation instead of asking the engine to read them at thumbnail size.
+    const scale = Math.min(longestEdge <= 1400 ? 3 : 1, 4096 / longestEdge);
     const canvas = document.createElement('canvas');
     canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
     canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
@@ -58,11 +61,18 @@ export async function recognizeBrowserImage(uri: string, progress?: (value: numb
     context.drawImage(image, 0, 0, canvas.width, canvas.height);
     const localImage = canvas.toDataURL('image/png');
     canvas.width = canvas.height = 0;
-    const { createWorker } = await import('tesseract.js');
-    return await readWithOcrWorker(localImage, () => createWorker('eng', 1, {
-      logger: event => progress?.(event.status === 'recognizing text'
-        ? 0.4 + event.progress * 0.6 : Math.min(0.4, event.progress * 0.4)),
-    }));
+    const { createWorker, PSM } = await import('tesseract.js');
+    return await readWithOcrWorker(localImage, async () => {
+      const worker = await createWorker('eng', 1, {
+        logger: event => progress?.(event.status === 'recognizing text'
+          ? 0.4 + event.progress * 0.6 : Math.min(0.4, event.progress * 0.4)),
+      });
+      try {
+        // Independent contact cards/columns are not one continuous text block.
+        await worker.setParameters({ tessedit_pageseg_mode: PSM.AUTO, preserve_interword_spaces: '1' });
+        return worker;
+      } catch (error) { await worker.terminate(); throw error; }
+    });
   } catch (error) {
     if (error instanceof Error && Object.values(R).includes(error.message)) throw error;
     throw new Error(R.browserOcrFailed);
