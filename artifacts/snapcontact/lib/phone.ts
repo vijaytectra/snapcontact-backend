@@ -17,6 +17,7 @@ export type Candidate = {
   formatted: string;
   message: string;
   extension?: string;
+  countryLabel?: string;
 };
 export type CountryOption = { code: CountryCode; name: string; callingCode: string };
 
@@ -47,17 +48,33 @@ export function validateNumber(raw: string, country: CountryCode) {
   // 00 is an international prefix in many, but not all, regions. Parsing with
   // the selected country preserves NANP 011, Australian 0011 and local trunks.
   const phone = parsePhoneNumberFromString(input, { defaultCountry: country, extract: false });
+  const international = input.startsWith('+') || (phone &&
+    (phone.countryCallingCode !== getCountryCallingCode(country) || /^(?:00|011)/.test(input)));
+  let countryLabel = '';
+  if (phone) {
+    const region = international ? phone.country : country;
+    let regionName = region ?? '';
+    if (region) {
+      try { regionName = new Intl.DisplayNames(undefined, { type: 'region' }).of(region) ?? region; }
+      catch { /* ISO region codes remain available offline. */ }
+    }
+    countryLabel = international
+      ? R.detectedCallingCode(regionName || (phone.countryCallingCode === '1' ? R.northAmericaShared : R.countryUndetermined), phone.countryCallingCode)
+      : R.defaultCallingCode(regionName, phone.countryCallingCode);
+  }
   if (!phone || !phone.isPossible()) return {
     valid: false, formatted: input, e164: '', extension: undefined,
-    message: R.checkDigits,
+    message: R.checkDigits, countryLabel,
   };
   if (!phone.isValid()) return {
     valid: false, formatted: phone.formatInternational(), e164: '',
-    extension: phone.ext, message: R.invalidPlan,
+    extension: phone.ext, countryLabel,
+    message: phone.countryCallingCode === '1' && phone.nationalNumber.startsWith('555')
+      ? R.exampleAreaCode : R.invalidPlan,
   };
   return {
     valid: true, formatted: phone.formatInternational(), e164: String(phone.number),
-    extension: phone.ext, message: '',
+    extension: phone.ext, message: '', countryLabel,
   };
 }
 
@@ -102,6 +119,7 @@ export function extractCandidates(source: string, country: CountryCode): Candida
       name: nearbyName(text, start), selected: check.valid,
       valid: check.valid, formatted: check.formatted,
       message: check.message, extension: check.extension,
+      countryLabel: check.countryLabel,
     }];
   });
 }

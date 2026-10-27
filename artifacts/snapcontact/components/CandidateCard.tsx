@@ -6,7 +6,7 @@ import { useColors } from '@/hooks/useColors';
 import { S } from '@/lib/strings';
 import { Checkbox, F, PressScale, tap } from './ui';
 
-export type Cand = { id: string; raw: string; number: string; name: string; selected: boolean; valid: boolean; formatted: string; message: string; extension?: string };
+export type Cand = { id: string; raw: string; number: string; name: string; selected: boolean; valid: boolean; formatted: string; message: string; extension?: string; countryLabel?: string };
 
 function Act({ icon, label, onPress, disabled, id }: { icon: React.ComponentProps<typeof Ionicons>['name']; label: string; onPress: () => void; disabled?: boolean; id: string }) {
   const c = useColors();
@@ -44,6 +44,9 @@ export function CandidateCard({ cand, index, onChange, onAction }: {
       <View style={{ gap: 6 }}>
         <Text style={{ fontFamily: F.m, fontSize: 13, color: c.mutedForeground }}>{S.review.number}</Text>
         <TextInput testID={`number-${cand.id}`} accessibilityLabel={`${S.review.number}, number ${index + 1}`} accessibilityHint={bad ? cand.message : undefined} value={cand.number} onChangeText={(t) => onChange({ number: t })} keyboardType="phone-pad" autoCorrect={false} style={[input, { borderColor: bad ? c.destructive : c.border, fontFamily: F.m }]} />
+        {cand.countryLabel ? (
+          <Text testID={`country-${cand.id}`} accessibilityLiveRegion="polite" style={{ fontFamily: F.m, fontSize: 13, color: c.mutedForeground }}>{cand.countryLabel}</Text>
+        ) : null}
         {bad ? (
           <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }} accessibilityLiveRegion="polite">
             <Ionicons name="alert-circle" size={16} color={c.destructive} />

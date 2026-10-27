@@ -3,6 +3,11 @@
 export const R = {
   checkDigits: 'Check the digits and choose the country the local number belongs to.',
   invalidPlan: 'Possible number, but not valid for this numbering plan. Please edit it.',
+  exampleAreaCode: 'This looks like an example number. 555 is not an assigned +1 area code. A different country selection cannot make this a valid phone number.',
+  northAmericaShared: 'North American numbering plan; shared country code',
+  countryUndetermined: 'Country or region not determined',
+  detectedCallingCode: (region: string, code: string) => `Detected from number: ${region} (+${code})`,
+  defaultCallingCode: (region: string, code: string) => `Using default country: ${region} (+${code})`,
   ocrNativeOnly: 'On-device image reading needs the installed native SnapContact build. In this preview, paste or type the text from your image to review numbers. No image is uploaded.',
   browserOcrFailed: 'Browser image reading could not start. Check your connection for the first OCR engine download, then retry. Your image stays on this device. You can also paste or type the text.',
   browserOcrTimeout: 'Image reading took too long. Try a smaller, sharper image and check your connection for the first engine download. Your image was not uploaded.',

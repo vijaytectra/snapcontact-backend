@@ -53,3 +53,30 @@ test('all library countries are searchable with localized offline names and call
   assert.equal(countries.find(c => c.code === 'GB').callingCode, '+44');
   assert.equal(countries.find(c => c.code === 'DE').name, 'Allemagne');
 });
+
+test('international numbers detect their own countries regardless of selected default', () => {
+  const rows = extractCandidates('Cafe\n+44 20 7946 0958\n+91 98765 43210\n+1 415 555 2671', 'JP');
+  assert.equal(rows.length, 3);
+  assert.ok(rows.every(row => row.valid));
+  assert.match(rows[0].countryLabel, /United Kingdom.*\+44/);
+  assert.match(rows[1].countryLabel, /India.*\+91/);
+  assert.match(rows[2].countryLabel, /United States.*\+1/);
+});
+test('the screenshot examples detect shared +1 but never validate the unassigned 555 area code', () => {
+  for (const defaultCountry of ['US', 'IN', 'GB']) {
+    const rows = extractCandidates('Support\n+1 555 1234567\n+1 (555) 987-6543', defaultCountry);
+    assert.equal(rows.length, 2);
+    for (const row of rows) {
+      assert.equal(row.valid, false);
+      assert.equal(row.selected, false);
+      assert.match(row.countryLabel, /shared country code.*\+1/);
+      assert.match(row.message, /555 is not an assigned/);
+    }
+  }
+});
+test('local numbers disclose fallback country instead of claiming country detection', () => {
+  const result = validateNumber('09876543210', 'IN');
+  assert.equal(result.valid, true);
+  assert.match(result.countryLabel, /Using default country: India.*\+91/);
+  assert.equal(validateNumber('011 44 20 7946 0958', 'US').countryLabel.includes('United Kingdom'), true);
+});

@@ -98,7 +98,7 @@ export function useCapture() {
     setCandidates(rows => rows.map(row => {
       const check = validateNumber(row.number, code);
       return { ...row, valid: check.valid, formatted: check.formatted, message: check.message,
-        extension: check.extension, selected: check.valid && row.selected };
+        extension: check.extension, countryLabel: check.countryLabel, selected: check.valid && row.selected };
     }));
     void persist(code, onboarded);
   };
@@ -145,7 +145,7 @@ export function useCapture() {
       const merged = { ...row, ...patch };
       const check = validateNumber(merged.number, countryRef.current);
       return { ...merged, valid: check.valid, formatted: check.formatted, message: check.message,
-        extension: check.extension, selected: check.valid && merged.selected };
+        extension: check.extension, countryLabel: check.countryLabel, selected: check.valid && merged.selected };
     }));
   };
   const selectAll = (selected: boolean) => {

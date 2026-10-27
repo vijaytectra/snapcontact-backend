@@ -22,7 +22,7 @@ export const S = {
     findNumbers: 'Find numbers',
     clearText: 'Clear text',
     country: 'Default country',
-    countryHint: 'Used for numbers without a country code',
+    countryHint: 'International country codes are detected automatically; this default is only for local numbers',
     privacy: 'Works offline on your device. Nothing is uploaded.',
     browserPrivacy: 'Images stay in your browser. Internet is needed to download the OCR engine and English model.',
     webNote: 'Preview image reading runs locally in your browser. The first scan downloads the OCR engine and English model; your image is never uploaded. Share intake and native contact saving need the installed app.',
