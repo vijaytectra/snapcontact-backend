@@ -284,20 +284,37 @@ Implemented production-ready **Quick Capture** floating overlay and screen captu
 - `expo-modules-autolinking resolve --platform android`: Autolinks `snap-capture` to `com.snapcontact.capture.SnapCaptureModule`.
 - `expo prebuild --no-install --platform android`: Successfully generated `AndroidManifest.xml` with all services, activities, and permissions.
 
-### 4. Real Gradle Build Execution
-- Command executed: `./gradlew tasks --dry-run` in `artifacts/snapcontact/android/`
-- **Result:**
-  - Gradle 9.3.1 daemon started with OpenJDK 24.
-  - Compiled `react-native-gradle-plugin:compileKotlin`.
-  - Compiled `expo-autolinking-plugin:compileKotlin`.
-  - Compiled `expo-module-gradle-plugin:compileKotlin`.
-  - Evaluated root project with targetSdk 36, minSdk 24, compileSdk 36.
-  - Android SDK check: Failed with `SDK location not found. Define a valid SDK location with an ANDROID_HOME environment variable or by setting sdk.dir in local.properties`.
-  - **Status:** Full APK assembly requires local installation of the Android SDK / Command-line Tools (`brew install --cask android-commandlinetools` or Android Studio) and setting `ANDROID_HOME`.
+### 4. Real Native Gradle Build Execution (Verified & Successful)
+- **Android SDK Configuration:**
+  - Android Commandline Tools installed at `/opt/homebrew/share/android-commandlinetools`.
+  - Configured `artifacts/snapcontact/android/local.properties` with `sdk.dir=/opt/homebrew/share/android-commandlinetools`.
+  - SDK licenses accepted via `yes | sdkmanager --licenses`.
+- **JDK 17 Compatibility Configuration:**
+  - Configured `org.gradle.java.home=/Users/akashsmac/Library/Java/JavaVirtualMachines/corretto-17.0.15/Contents/Home` in `gradle.properties`.
+  - This prevents Java 24 from emitting JEP 472 restricted method warnings to stderr during Prefab package generation.
+- **Module Build Verification (`:snap-capture:assembleDebug`):**
+  - Command: `./gradlew :snap-capture:assembleDebug --stacktrace`
+  - **Result:** `BUILD SUCCESSFUL in 51s` (77 actionable tasks: 21 executed, 56 up-to-date).
+  - Verified Kotlin compilation of `SnapCaptureModule.kt`, `QuickCaptureOverlay.kt`, `QuickCaptureService.kt`, `ScreenCaptureManager.kt`, `OcrProcessor.kt`, `CaptureResultStore.kt`, and `MediaProjectionConsentActivity.kt`.
+- **Full Application Build Verification (`:app:assembleDebug`):**
+  - Command: `./gradlew assembleDebug --stacktrace`
+  - **Result:** `BUILD SUCCESSFUL in 18m 18s` (584 actionable tasks: 262 executed, 322 up-to-date).
+  - Successfully compiled C++ native architectures (`arm64-v8a`, `armeabi-v7a`, `x86`, `x86_64`) with CMake 3.22.1 and Ninja.
+  - Successfully packaged debug APK:
+    - Path: `artifacts/snapcontact/android/app/build/outputs/apk/debug/app-debug.apk`
+    - Size: 294.8 MB (contains all 4 architectures and bundled ML Kit Latin OCR model).
 
 ### 5. Physical Device Testing Status
-- Checked connected USB devices via `system_profiler SPUSBDataType`.
-- **Status:** No physical Android device or emulator is currently connected to this host machine. Physical-device testing remains to be performed once a hardware device or emulator is attached.
+- Checked connected USB devices via `/opt/homebrew/share/android-commandlinetools/platform-tools/adb devices`.
+- **Status:** List of devices attached is currently empty (no physical phone attached via USB).
+- Once a physical Android phone is connected via USB with **USB Debugging** enabled, install and run immediately with:
+  ```bash
+  /opt/homebrew/share/android-commandlinetools/platform-tools/adb install artifacts/snapcontact/android/app/build/outputs/apk/debug/app-debug.apk
+  ```
+  or:
+  ```bash
+  pnpm --filter @workspace/snapcontact exec expo run:android
+  ```
 
 ---
 
