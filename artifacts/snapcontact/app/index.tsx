@@ -99,34 +99,37 @@ export default function Index() {
   const header = (
     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8, marginBottom: 16 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-        <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: c.card, borderWidth: 1, borderColor: c.border, alignItems: 'center', justifyContent: 'center' }}>
-          <Ionicons name="scan-outline" size={22} color="#FFFFFF" />
+        <View style={{ width: 42, height: 42, borderRadius: 13, backgroundColor: c.card, borderWidth: 1, borderColor: c.border, alignItems: 'center', justifyContent: 'center' }}>
+          <Ionicons name="scan-outline" size={23} color="#FFFFFF" />
         </View>
         <View style={{ gap: 1 }}>
           <Text accessibilityRole="header" style={{ fontFamily: F.b, fontSize: 21, color: c.foreground, letterSpacing: -0.5 }}>{S.appName}</Text>
-          <Text style={{ fontFamily: F.r, fontSize: 12, color: '#A1A1AA' }}>Privacy-first contact capture</Text>
+          <Text style={{ fontFamily: F.r, fontSize: 12, color: '#A1A1AA' }}>100% on-device capture</Text>
         </View>
       </View>
+      {/* Compact Default Country Selector at Top Right */}
       <PressScale
-        testID="open-settings"
+        testID="country-chip"
         accessibilityRole="button"
-        accessibilityLabel={S.home.settings}
-        accessibilityHint="Opens privacy settings and help documentation"
-        onPress={() => { tap(); setSettingsOpen(true); }}
+        accessibilityLabel={`${S.home.country}: ${countryName?.name ?? cap.country}. ${S.home.countryHint}`}
+        onPress={() => { tap(); setCountryOpen(true); }}
         style={{
           flexDirection: 'row',
           alignItems: 'center',
           gap: 7,
-          paddingHorizontal: 13,
+          paddingHorizontal: 12,
           paddingVertical: 8,
           borderRadius: 999,
-          backgroundColor: c.card,
+          backgroundColor: c.secondary,
           borderWidth: 1,
           borderColor: c.border,
         }}
       >
-        <Ionicons name="shield-checkmark-outline" size={16} color="#FFFFFF" />
-        <Text style={{ fontFamily: F.s, fontSize: 13, color: c.foreground, letterSpacing: -0.1 }}>{S.home.settings}</Text>
+        <Ionicons name="globe-outline" size={15} color="#FFFFFF" />
+        <Text style={{ fontFamily: F.s, fontSize: 13, color: c.foreground }}>
+          {countryName ? `${countryName.code} +${countryName.callingCode.replace('+', '')}` : cap.country}
+        </Text>
+        <Ionicons name="chevron-down" size={13} color="#A1A1AA" />
       </PressScale>
     </View>
   );
@@ -134,9 +137,12 @@ export default function Index() {
   const body = !reviewing ? (
     <>
       {header}
-      <Animated.View entering={FadeInDown.duration(450)} style={{ gap: 6, marginTop: 4, marginBottom: 12 }}>
-        <Text style={{ fontFamily: F.b, fontSize: 36, lineHeight: 42, letterSpacing: -1.2, color: c.foreground }}>
+      <Animated.View entering={FadeInDown.duration(450)} style={{ gap: 8, marginTop: 4, marginBottom: 14 }}>
+        <Text style={{ fontFamily: F.b, fontSize: 38, lineHeight: 44, letterSpacing: -1.3, color: c.foreground }}>
           {S.tagline}
+        </Text>
+        <Text style={{ fontFamily: F.r, fontSize: 15, lineHeight: 22, color: '#A1A1AA' }}>
+          Instantly convert screenshots, business cards, and storefront signs into saved contacts.
         </Text>
       </Animated.View>
       {messages}
@@ -154,19 +160,26 @@ export default function Index() {
             backgroundColor: '#FFFFFF',
             borderRadius: 22,
             padding: 24,
-            minHeight: 124,
+            minHeight: 128,
             justifyContent: 'space-between',
           }}
         >
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-            <View style={{ width: 44, height: 44, borderRadius: 12, backgroundColor: '#080809', alignItems: 'center', justifyContent: 'center' }}>
+            <View style={{ width: 46, height: 46, borderRadius: 14, backgroundColor: '#080809', alignItems: 'center', justifyContent: 'center' }}>
               <Ionicons name="images" size={24} color="#FFFFFF" />
             </View>
-            <Ionicons name="arrow-forward" size={20} color="#080809" />
+            <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: '#F0F0F2', alignItems: 'center', justifyContent: 'center' }}>
+              <Ionicons name="arrow-forward" size={18} color="#080809" />
+            </View>
           </View>
-          <View style={{ gap: 4, marginTop: 12 }}>
-            <Text style={{ fontFamily: F.b, fontSize: 21, color: '#080809', letterSpacing: -0.4 }}>{S.home.library}</Text>
-            <Text style={{ fontFamily: F.r, fontSize: 14, color: '#080809', opacity: 0.75 }}>{S.home.libraryHint}</Text>
+          <View style={{ gap: 4, marginTop: 14 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Text style={{ fontFamily: F.b, fontSize: 21, color: '#080809', letterSpacing: -0.4 }}>{S.home.library}</Text>
+              <View style={{ backgroundColor: '#080809', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999 }}>
+                <Text style={{ fontFamily: F.b, fontSize: 10, color: '#FFFFFF', letterSpacing: 0.5 }}>LOCAL OCR</Text>
+              </View>
+            </View>
+            <Text style={{ fontFamily: F.r, fontSize: 14, color: '#3A3A40', lineHeight: 20 }}>{S.home.libraryHint}</Text>
           </View>
         </PressScale>
 
@@ -181,16 +194,16 @@ export default function Index() {
             backgroundColor: c.card,
             borderWidth: 1,
             borderColor: c.border,
-            borderRadius: 18,
+            borderRadius: 20,
             padding: 18,
-            minHeight: 74,
+            minHeight: 76,
             flexDirection: 'row',
             alignItems: 'center',
             gap: 14,
           }}
         >
-          <View style={{ width: 42, height: 42, borderRadius: 12, backgroundColor: c.secondary, borderWidth: 1, borderColor: c.border, alignItems: 'center', justifyContent: 'center' }}>
-            <Ionicons name="camera-outline" size={22} color="#FFFFFF" />
+          <View style={{ width: 44, height: 44, borderRadius: 13, backgroundColor: c.secondary, borderWidth: 1, borderColor: c.border, alignItems: 'center', justifyContent: 'center' }}>
+            <Ionicons name="camera-outline" size={23} color="#FFFFFF" />
           </View>
           <View style={{ flex: 1, gap: 2 }}>
             <Text style={{ fontFamily: F.s, fontSize: 16, color: c.foreground }}>{S.home.camera}</Text>
@@ -302,10 +315,10 @@ export default function Index() {
         </View>
       </Animated.View>
 
-      {/* Privacy and Help Card */}
-      <Animated.View entering={FadeIn.delay(300)} style={{ marginTop: 10 }}>
+      {/* Privacy and Help Card (Moved down from header as requested) */}
+      <Animated.View entering={FadeInDown.delay(260).duration(450)} style={{ marginTop: 6 }}>
         <PressScale
-          testID="footer-privacy-link"
+          testID="open-settings"
           accessibilityRole="button"
           accessibilityLabel={S.home.settings}
           accessibilityHint="Tap to view offline privacy policy and help"
@@ -315,22 +328,27 @@ export default function Index() {
             alignItems: 'center',
             gap: 14,
             padding: 18,
-            borderRadius: 18,
+            borderRadius: 20,
             backgroundColor: c.card,
             borderWidth: 1,
             borderColor: c.border,
           }}
         >
-          <View style={{ width: 38, height: 38, borderRadius: 12, backgroundColor: c.secondary, borderWidth: 1, borderColor: c.border, alignItems: 'center', justifyContent: 'center' }}>
-            <Ionicons name="lock-closed" size={18} color="#FFFFFF" />
+          <View style={{ width: 42, height: 42, borderRadius: 13, backgroundColor: c.secondary, borderWidth: 1, borderColor: c.border, alignItems: 'center', justifyContent: 'center' }}>
+            <Ionicons name="shield-checkmark-outline" size={20} color="#FFFFFF" />
           </View>
           <View style={{ flex: 1, gap: 3 }}>
-            <Text style={{ fontFamily: F.s, fontSize: 15, color: c.foreground }}>{S.home.settings}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Text style={{ fontFamily: F.s, fontSize: 16, color: c.foreground }}>{S.home.settings}</Text>
+              <View style={{ backgroundColor: 'rgba(255, 255, 255, 0.08)', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 999 }}>
+                <Text style={{ fontFamily: F.m, fontSize: 10, color: '#A1A1AA', letterSpacing: 0.5 }}>100% OFFLINE</Text>
+              </View>
+            </View>
             <Text style={{ fontFamily: F.r, fontSize: 13, lineHeight: 18, color: c.mutedForeground }}>
               {Platform.OS === 'web' ? S.home.browserPrivacy : S.home.privacy}
             </Text>
           </View>
-          <Ionicons name="chevron-forward" size={16} color="#71717A" />
+          <Ionicons name="chevron-forward" size={18} color="#71717A" />
         </PressScale>
       </Animated.View>
 

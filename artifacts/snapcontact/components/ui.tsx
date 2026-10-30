@@ -52,7 +52,9 @@ export function Button({ label, onPress, icon, variant = 'primary', disabled, lo
   const isDanger = variant === 'danger';
   const isSecondary = variant === 'secondary';
 
-  const bg = isPrimary
+  const bg = disabled && isPrimary
+    ? '#1C1C20'
+    : isPrimary
     ? '#FFFFFF'
     : isDanger
     ? 'rgba(239, 68, 68, 0.14)'
@@ -60,7 +62,9 @@ export function Button({ label, onPress, icon, variant = 'primary', disabled, lo
     ? c.secondary
     : 'transparent';
 
-  const fg = isPrimary
+  const fg = disabled && isPrimary
+    ? '#71717A'
+    : isPrimary
     ? '#080809'
     : isDanger
     ? '#EF4444'
@@ -68,7 +72,9 @@ export function Button({ label, onPress, icon, variant = 'primary', disabled, lo
     ? '#F8F8FA'
     : '#A1A1AA';
 
-  const border = isPrimary
+  const border = disabled && isPrimary
+    ? c.border
+    : isPrimary
     ? 'transparent'
     : isDanger
     ? 'rgba(239, 68, 68, 0.28)'
@@ -97,7 +103,7 @@ export function Button({ label, onPress, icon, variant = 'primary', disabled, lo
         alignItems: 'center',
         justifyContent: 'center',
         gap: 9,
-        opacity: disabled ? 0.4 : 1,
+        opacity: disabled && !isPrimary ? 0.4 : 1,
       }}
     >
       {loading ? (
