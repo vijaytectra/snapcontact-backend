@@ -235,3 +235,26 @@ test('Privacy verification: No raw OCR text or contact details are written to An
   assert.ok(!managerSource.includes('Log.d(TAG, bitmap'));
 });
 
+test('Android manifest configuration declares specialUse foreground service type for Android 14+', () => {
+  const pluginSource = fs.readFileSync(new URL('../plugins/withSnapCapture.js', import.meta.url), 'utf8');
+  assert.ok(pluginSource.includes('FOREGROUND_SERVICE_SPECIAL_USE'), 'Must declare FOREGROUND_SERVICE_SPECIAL_USE');
+  assert.ok(pluginSource.includes('specialUse|mediaProjection'), 'Must configure specialUse|mediaProjection foreground service type');
+  assert.ok(pluginSource.includes('PROPERTY_SPECIAL_USE_FGS_SUBTYPE'), 'Must declare PROPERTY_SPECIAL_USE_FGS_SUBTYPE property');
+});
+
+test('Quick Capture extracts standalone Instagram bio link (website without phone)', () => {
+  const instagramBioOnly = `
+    sweet_delights_paris
+    Sweet Delights Paris
+    Artisanal French Macarons & Cakes 🍰
+    DM for custom orders
+    linktr.ee/sweetdelightsparis
+  `;
+
+  const candidates = extractCandidates(instagramBioOnly, 'US');
+  assert.ok(candidates.length > 0, 'Should find candidate with website bio link');
+  const candidate = candidates[0];
+  assert.equal(candidate.website, 'linktr.ee/sweetdelightsparis');
+  assert.ok(candidate.valid, 'Candidate with website should be valid');
+});
+

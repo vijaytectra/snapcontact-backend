@@ -8,36 +8,48 @@ import android.hardware.display.VirtualDisplay
 import android.media.Image
 import android.media.ImageReader
 import android.media.projection.MediaProjection
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.DisplayMetrics
 import android.util.Log
 import android.view.WindowManager
 import kotlinx.coroutines.suspendCancellableCoroutine
+import java.nio.ByteBuffer
 import kotlin.coroutines.resume
 
 class ScreenCaptureManager(private val context: Context) {
   companion object {
     private const val TAG = "ScreenCaptureManager"
     private const val VIRTUAL_DISPLAY_NAME = "SnapContact_QuickCapture"
-    private const val TIMEOUT_MS = 3000L
+    private const val TIMEOUT_MS = 4000L
   }
 
   suspend fun captureFrame(mediaProjection: MediaProjection): Bitmap? = suspendCancellableCoroutine { continuation ->
     val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
-    val metrics = DisplayMetrics()
-    @Suppress("DEPRECATION")
-    windowManager.defaultDisplay.getRealMetrics(metrics)
-
-    val width = metrics.widthPixels
-    val height = metrics.heightPixels
-    val density = metrics.densityDpi
+    val width: Int
+    val height: Int
+    val density: Int
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+      val bounds = windowManager.currentWindowMetrics.bounds
+      width = bounds.width()
+      height = bounds.height()
+      density = context.resources.configuration.densityDpi
+    } else {
+      val metrics = DisplayMetrics()
+      @Suppress("DEPRECATION")
+      windowManager.defaultDisplay.getRealMetrics(metrics)
+      width = metrics.widthPixels
+      height = metrics.heightPixels
+      density = metrics.densityDpi
+    }
 
     val imageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2)
     val mainHandler = Handler(Looper.getMainLooper())
 
     var virtualDisplay: VirtualDisplay? = null
     var hasCaptured = false
+    var frameCount = 0
 
     lateinit var projectionCallback: MediaProjection.Callback
 
@@ -84,33 +96,38 @@ class ScreenCaptureManager(private val context: Context) {
       try {
         image = reader.acquireLatestImage()
         if (image != null) {
-          hasCaptured = true
-          mainHandler.removeCallbacks(timeoutRunnable)
-
+          frameCount++
           val planes = image.planes
           val buffer = planes[0].buffer
           val pixelStride = planes[0].pixelStride
           val rowStride = planes[0].rowStride
-          val rowPadding = rowStride - pixelStride * width
+          val rowBytes = width * pixelStride
 
-          val bitmap = Bitmap.createBitmap(
-            width + rowPadding / pixelStride,
-            height,
-            Bitmap.Config.ARGB_8888
-          )
-          bitmap.copyPixelsFromBuffer(buffer)
+          val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+          val cleanBuffer = ByteBuffer.allocateDirect(width * height * 4)
+          val rowData = ByteArray(rowBytes)
+          buffer.rewind()
+          for (row in 0 until height) {
+            buffer.position(row * rowStride)
+            buffer.get(rowData, 0, rowBytes)
+            cleanBuffer.put(rowData, 0, rowBytes)
+          }
+          cleanBuffer.rewind()
+          bitmap.copyPixelsFromBuffer(cleanBuffer)
 
-          val finalBitmap = if (rowPadding == 0) {
-            bitmap
-          } else {
-            val cropped = Bitmap.createBitmap(bitmap, 0, 0, width, height)
+          // On some devices the initial frame can be blank / uninitialized during display attachment.
+          // Discard up to 2 initial blank frames so the real screen content is captured.
+          if (frameCount < 3 && isBitmapBlank(bitmap)) {
+            Log.d(TAG, "Frame $frameCount is blank, waiting for next display update")
             bitmap.recycle()
-            cropped
+            return@setOnImageAvailableListener
           }
 
+          hasCaptured = true
+          mainHandler.removeCallbacks(timeoutRunnable)
           cleanup()
-          Log.d(TAG, "Frame captured successfully (${finalBitmap.width}x${finalBitmap.height})")
-          if (continuation.isActive) continuation.resume(finalBitmap)
+          Log.d(TAG, "Frame captured successfully on frame $frameCount (${bitmap.width}x${bitmap.height})")
+          if (continuation.isActive) continuation.resume(bitmap)
         }
       } catch (e: Exception) {
         Log.e(TAG, "Failed reading image frame from ImageReader", e)
@@ -143,5 +160,23 @@ class ScreenCaptureManager(private val context: Context) {
       cleanup()
       if (continuation.isActive) continuation.resume(null)
     }
+  }
+
+  private fun isBitmapBlank(bitmap: Bitmap): Boolean {
+    val w = bitmap.width
+    val h = bitmap.height
+    for (xStep in 1..4) {
+      for (yStep in 1..4) {
+        val pixel = bitmap.getPixel((w * xStep) / 5, (h * yStep) / 5)
+        val alpha = (pixel shr 24) and 0xff
+        val red = (pixel shr 16) and 0xff
+        val green = (pixel shr 8) and 0xff
+        val blue = pixel and 0xff
+        if (alpha > 0 && (red > 8 || green > 8 || blue > 8)) {
+          return false
+        }
+      }
+    }
+    return true
   }
 }

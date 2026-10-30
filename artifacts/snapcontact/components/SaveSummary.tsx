@@ -13,31 +13,71 @@ export function SaveSummary({ visible, saving, outcomes, total, onDone }: { visi
   const s = outcomes.filter((o) => o.status === 'saved').length;
   const ca = outcomes.filter((o) => o.status === 'cancelled').length;
   const e = outcomes.filter((o) => o.status === 'error').length;
-  const icon = { saved: ['checkmark-circle', c.primary], cancelled: ['remove-circle-outline', c.mutedForeground], error: ['alert-circle', c.destructive] } as const;
+  const icon = { saved: ['checkmark-circle', '#FFFFFF'], cancelled: ['remove-circle-outline', '#A1A1AA'], error: ['alert-circle', c.destructive] } as const;
   const label = { saved: S.summary.saved, cancelled: S.summary.cancelled, error: S.summary.error };
+
   return (
     <Modal visible={visible} animationType="fade" transparent onRequestClose={saving ? undefined : onDone}>
-      <View style={{ flex: 1, backgroundColor: 'rgba(15,26,22,0.55)', justifyContent: 'flex-end' }}>
-        <View testID="save-summary" style={{ backgroundColor: c.background, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24, paddingBottom: i.bottom + 20, maxHeight: '80%' }}>
-          <Text accessibilityRole="header" style={{ fontFamily: F.b, fontSize: 24, color: c.foreground }}>{saving ? S.summary.saving : S.summary.title}</Text>
-          <Text accessibilityLiveRegion="polite" style={{ fontFamily: F.r, fontSize: 15, color: c.mutedForeground, marginTop: 4, marginBottom: 16 }}>
+      <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.72)', justifyContent: 'flex-end' }}>
+        <View
+          testID="save-summary"
+          style={{
+            backgroundColor: c.card,
+            borderTopLeftRadius: 28,
+            borderTopRightRadius: 28,
+            borderTopWidth: 1,
+            borderTopColor: c.border,
+            padding: 24,
+            paddingBottom: Math.max(i.bottom, 16) + 24,
+            maxHeight: '80%',
+            maxWidth: 520,
+            width: '100%',
+            alignSelf: 'center',
+          }}
+        >
+          <Text accessibilityRole="header" style={{ fontFamily: F.b, fontSize: 24, color: c.foreground, letterSpacing: -0.5 }}>
+            {saving ? S.summary.saving : S.summary.title}
+          </Text>
+          <Text accessibilityLiveRegion="polite" style={{ fontFamily: F.r, fontSize: 14, color: c.mutedForeground, marginTop: 4, marginBottom: 18 }}>
             {saving ? `${outcomes.length} of ${total}. ${S.summary.savingBody}` : S.summary.counts(s, ca, e)}
           </Text>
-          <ScrollView style={{ flexGrow: 0 }}>
+          <ScrollView style={{ flexGrow: 0 }} showsVerticalScrollIndicator={false}>
             {outcomes.map((o) => (
-              <View key={o.id} accessible accessibilityLabel={`${o.name || 'Unnamed'}, ${label[o.status]}${o.message ? '. ' + o.message : ''}`} style={{ flexDirection: 'row', gap: 12, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: c.border, alignItems: 'flex-start' }}>
-                <Ionicons name={icon[o.status][0]} size={24} color={icon[o.status][1]} />
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontFamily: F.s, fontSize: 16, color: c.foreground }}>{o.name || 'Unnamed contact'}</Text>
-                  <Text style={{ fontFamily: F.r, fontSize: 14, color: o.status === 'error' ? c.destructive : c.mutedForeground }}>{o.message || label[o.status]}</Text>
+              <View
+                key={o.id}
+                accessible
+                accessibilityLabel={`${o.name || 'Unnamed'}, ${label[o.status]}${o.message ? '. ' + o.message : ''}`}
+                style={{
+                  flexDirection: 'row',
+                  gap: 14,
+                  paddingVertical: 14,
+                  borderBottomWidth: 1,
+                  borderBottomColor: c.border,
+                  alignItems: 'center',
+                }}
+              >
+                <Ionicons name={icon[o.status][0]} size={22} color={icon[o.status][1]} />
+                <View style={{ flex: 1, gap: 2 }}>
+                  <Text style={{ fontFamily: F.s, fontSize: 15, color: c.foreground }}>{o.name || 'Unnamed contact'}</Text>
+                  <Text style={{ fontFamily: F.r, fontSize: 13, color: o.status === 'error' ? c.destructive : c.mutedForeground }}>
+                    {o.message || label[o.status]}
+                  </Text>
                 </View>
               </View>
             ))}
-            {saving && outcomes.length < total ? <View style={{ paddingVertical: 12 }}><Skeleton h={44} /></View> : null}
+            {saving && outcomes.length < total ? (
+              <View style={{ paddingVertical: 12 }}>
+                <Skeleton h={44} />
+              </View>
+            ) : null}
           </ScrollView>
           {!saving ? (
-            <View style={{ marginTop: 18, gap: 12 }}>
-              {s > 0 ? <Text style={{ fontFamily: F.r, fontSize: 13, lineHeight: 19, color: c.mutedForeground }}>{S.summary.syncNote}</Text> : null}
+            <View style={{ marginTop: 20, gap: 14 }}>
+              {s > 0 ? (
+                <Text style={{ fontFamily: F.r, fontSize: 12, lineHeight: 18, color: '#71717A', textAlign: 'center' }}>
+                  {S.summary.syncNote}
+                </Text>
+              ) : null}
               <Button testID="summary-done" label={S.summary.done} onPress={onDone} />
             </View>
           ) : null}

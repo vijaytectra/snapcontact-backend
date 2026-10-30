@@ -376,6 +376,32 @@ export function extractCandidates(source: string, country: CountryCode): Candida
     });
   }
 
+  // Also include standalone website contacts (e.g. bio links on Instagram) that had no phone or email
+  for (let w = 0; w < websites.length; w++) {
+    if (usedWebsites.has(w)) continue;
+    const web = websites[w];
+    usedWebsites.add(w);
+
+    candidates.push({
+      id: `website-${web.start}`,
+      raw: '',
+      number: '',
+      name: nearbyName(text, web.start),
+      email: undefined,
+      website: web.website,
+      selected: true,
+      valid: true,
+      formatted: web.website,
+      message: '',
+      extension: undefined,
+      countryLabel: undefined,
+      country: undefined,
+      callingCode: undefined,
+      countryName: undefined,
+      international: false,
+    });
+  }
+
   return candidates;
 
 }

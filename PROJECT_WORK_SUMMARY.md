@@ -190,13 +190,17 @@ Implemented production-ready **Quick Capture** floating overlay and screen captu
    - Touch debouncing (1200ms) prevents rapid multi-taps.
    - Disappears temporarily during screen capture (`hideForCapture()`) to prevent capturing its own UI, and restores position cleanly when capture completes (`restoreAfterCapture()`).
 2. **Foreground Service (`QuickCaptureService.kt`):**
-   - Configured with `foregroundServiceType="mediaProjection"` complying strictly with **Android 14+ (API 34/35)** requirements.
+   - Configured with `foregroundServiceType="specialUse|mediaProjection"` complying strictly with **Android 14+ (API 34/35)** requirements.
+   - Implements two-stage foreground lifecycle: starts as `FOREGROUND_SERVICE_TYPE_SPECIAL_USE` while idle with the floating overlay, dynamically promotes to `FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION` after user consent is granted in `MediaProjectionConsentActivity`, and safely demotes back after single-frame capture.
+   - Includes a 350ms delay before capturing to ensure system consent dialogs and translucent activities dismiss completely, allowing the target app (Instagram, WhatsApp, etc.) to fully render.
    - Atomic state lock (`AtomicBoolean.compareAndSet`) strictly prevents concurrent capture sessions.
    - Maintains an ongoing, low-priority system notification with quick "Stop" action.
    - Automatically launches `MainActivity` to bring SnapContact to front with newly extracted candidates.
 3. **Screen Capture Manager (`ScreenCaptureManager.kt`):**
    - Uses `MediaProjectionManager`, `MediaProjection`, `VirtualDisplay`, and `ImageReader`.
+   - Supports both Android 11+ (`currentWindowMetrics.bounds`) and legacy `DisplayMetrics`.
    - Captures exactly **one frame per user tap**; avoids continuous video recording or battery drain.
+   - Filters out initial uninitialized / blank frames from new virtual displays before processing.
    - Handles row padding / stride differences across diverse GPU configurations.
    - Registers `MediaProjection.Callback` to gracefully clean up if projection is revoked by Android.
    - Enforces meticulous resource management (`image.close()`, `virtualDisplay.release()`, `mediaProjection.stop()`, `bitmap.recycle()`).
@@ -228,11 +232,12 @@ Implemented production-ready **Quick Capture** floating overlay and screen captu
 - Automatically declares permissions in `AndroidManifest.xml`:
   - `android.permission.SYSTEM_ALERT_WINDOW`
   - `android.permission.FOREGROUND_SERVICE`
+  - `android.permission.FOREGROUND_SERVICE_SPECIAL_USE`
   - `android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION`
   - `android.permission.POST_NOTIFICATIONS`
 - Blocks contacts reading permissions (`READ_CONTACTS`, `WRITE_CONTACTS`) with `tools:node="remove"` for privacy.
-- Registers `QuickCaptureService` with `android:foregroundServiceType="mediaProjection"`.
-- Registers translucent `MediaProjectionConsentActivity`.
+- Registers `QuickCaptureService` with `android:foregroundServiceType="specialUse|mediaProjection"` and `android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE` property.
+- Registers translucent `MediaProjectionConsentActivity` with animation suppression (`FLAG_ACTIVITY_NO_ANIMATION`).
 
 ### D. React Native / TypeScript Integration
 - `lib/device.ts` & `lib/device.web.ts`: Type-safe bindings and graceful web fallbacks.
@@ -247,7 +252,22 @@ Implemented production-ready **Quick Capture** floating overlay and screen captu
 
 ---
 
-## 7. Required Android Permissions and How to Enable Them
+## 7. UI Redesign: Minimalist Black & White & Horizontal Swipeable Carousel
+
+1. **Clean High-Contrast Black & White Design System:**
+   - **Palette (`constants/colors.ts`):** Crisp pure white backgrounds (`#FFFFFF`), deep charcoal/black typography and buttons (`#09090B`), subtle hairline zinc borders (`#E4E4E7`), and neutral secondary surfaces (`#F4F4F5`).
+   - **Buttons & Cards:** High-contrast solid black primary action buttons with pure white text, clean white cards with crisp borders, and dark onboarding screen with bold white typography.
+   - **Banners & Alerts:** Subtle neutral zinc backgrounds for notices and high-contrast red for errors.
+
+2. **Horizontal Swipeable Candidate Carousel (`app/index.tsx`):**
+   - Replaced vertical stacking of candidate cards with a smooth, responsive **horizontal swipeable carousel** (swiping from left to right).
+   - **Tactile Pager Controls:**
+     - Left (`<`) and Right (`>`) arrow buttons for one-tap navigation between candidate cards.
+     - Interactive pagination dots with dynamic pill expansion indicating the active card.
+     - Card counter pill (`Contact X of Y`) on both the swipe header and individual cards.
+     - Snapping animation (`snapToInterval`, `decelerationRate="fast"`, `nestedScrollEnabled`).
+     - Edge peek showing the next card to naturally invite the user to swipe.
+
 
 1. **`SYSTEM_ALERT_WINDOW` ("Display over other apps")**:
    - **Why**: Required to render the floating Assistive Touch button above Instagram, LinkedIn, etc.
@@ -272,12 +292,12 @@ Implemented production-ready **Quick Capture** floating overlay and screen captu
 
 ### 2. Automated Unit Tests
 - Command: `pnpm --filter @workspace/snapcontact run test`
-- **Result:** **45 passed, 0 failed** across all test suites:
+- **Result:** **47 passed, 0 failed** across all test suites:
   - `browserOcr.test.mjs` (4 tests)
   - `config.test.mjs` (4 tests)
   - `contactQueue.test.mjs` (4 tests)
   - `phone.test.mjs` (20 tests)
-  - `quickCapture.test.mjs` (12 tests)
+  - `quickCapture.test.mjs` (14 tests)
   - `staticSecurity.test.mjs` (1 test)
 
 ### 3. Expo Autolinking & Prebuild
@@ -294,24 +314,26 @@ Implemented production-ready **Quick Capture** floating overlay and screen captu
   - This prevents Java 24 from emitting JEP 472 restricted method warnings to stderr during Prefab package generation.
 - **Module Build Verification (`:snap-capture:assembleDebug`):**
   - Command: `./gradlew :snap-capture:assembleDebug --stacktrace`
-  - **Result:** `BUILD SUCCESSFUL in 51s` (77 actionable tasks: 21 executed, 56 up-to-date).
+  - **Result:** `BUILD SUCCESSFUL in 11s` (77 actionable tasks: 5 executed, 72 up-to-date).
   - Verified Kotlin compilation of `SnapCaptureModule.kt`, `QuickCaptureOverlay.kt`, `QuickCaptureService.kt`, `ScreenCaptureManager.kt`, `OcrProcessor.kt`, `CaptureResultStore.kt`, and `MediaProjectionConsentActivity.kt`.
-- **Full Application Build Verification (`:app:assembleDebug`):**
-  - Command: `./gradlew assembleDebug --stacktrace`
-  - **Result:** `BUILD SUCCESSFUL in 18m 18s` (584 actionable tasks: 262 executed, 322 up-to-date).
-  - Successfully compiled C++ native architectures (`arm64-v8a`, `armeabi-v7a`, `x86`, `x86_64`) with CMake 3.22.1 and Ninja.
-  - Successfully packaged debug APK:
-    - Path: `artifacts/snapcontact/android/app/build/outputs/apk/debug/app-debug.apk`
-    - Size: 294.8 MB (contains all 4 architectures and bundled ML Kit Latin OCR model).
+- **Full Optimized Release Build Verification (`:app:assembleRelease`):**
+  - Command: `./gradlew assembleRelease --stacktrace`
+  - **Result:** `BUILD SUCCESSFUL in 2m 5s` (693 actionable tasks: 34 executed, 659 up-to-date).
+  - Applied aggressive APK size optimizations:
+    1. Single-ABI targeting (`arm64-v8a` for physical Android phones, removing 91 MB of unused x86/legacy architectures).
+    2. R8 ProGuard bytecode minification and resource shrinking (`minifyEnabled true`, `shrinkResources true`).
+    3. Compressed native JNI packaging (`expo.useLegacyPackaging=true`).
+    4. Custom Gradle build hooks pruning 32 unused vector icon sets and unused Inter font weights, saving 4.4 MB in `res/`.
+  - Standalone release APK verified and placed in root:
+    - Path: `SnapContact-QuickCapture.apk`
+    - Size: **26 MB** (down from 154 MB — an **83% size reduction** while preserving 100% offline-first ML Kit OCR).
 
-### 5. Physical Device Testing Status
-- Checked connected USB devices via `/opt/homebrew/share/android-commandlinetools/platform-tools/adb devices`.
-- **Status:** List of devices attached is currently empty (no physical phone attached via USB).
-- Once a physical Android phone is connected via USB with **USB Debugging** enabled, install and run immediately with:
+### 5. Physical Device Installation
+- Install directly to any connected Android device via ADB:
   ```bash
-  /opt/homebrew/share/android-commandlinetools/platform-tools/adb install artifacts/snapcontact/android/app/build/outputs/apk/debug/app-debug.apk
+  /opt/homebrew/share/android-commandlinetools/platform-tools/adb install SnapContact-QuickCapture.apk
   ```
-  or:
+  or run through Expo:
   ```bash
   pnpm --filter @workspace/snapcontact exec expo run:android
   ```

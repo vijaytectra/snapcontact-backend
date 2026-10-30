@@ -18,7 +18,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class QuickCaptureService : Service() {
   companion object {
@@ -61,7 +63,7 @@ class QuickCaptureService : Service() {
     screenCaptureManager = ScreenCaptureManager(this)
 
     createNotificationChannel()
-    startForegroundServiceWithNotification()
+    startForegroundAsSpecialUse()
 
     overlay = QuickCaptureOverlay(this) {
       handleCaptureRequested()
@@ -123,6 +125,15 @@ class QuickCaptureService : Service() {
     serviceScope.launch(Dispatchers.Default) {
       var mediaProjection: MediaProjection? = null
       try {
+        // Upgrade foreground service to mediaProjection NOW that user consent has been granted
+        withContext(Dispatchers.Main) {
+          upgradeForegroundToMediaProjection()
+        }
+
+        // Wait 350ms so system consent dialog and translucent activity dismiss completely,
+        // ensuring Instagram / active app is fully drawn on screen before capture.
+        delay(350)
+
         mediaProjection = mediaProjectionManager.getMediaProjection(resultCode, data.clone() as Intent)
         if (mediaProjection == null) {
           throw IllegalStateException("Failed to acquire MediaProjection instance")
@@ -153,6 +164,10 @@ class QuickCaptureService : Service() {
           mediaProjection?.stop()
         } catch (e: Exception) {
           Log.e(TAG, "Error stopping MediaProjection", e)
+        }
+        // Demote foreground service back to specialUse safely
+        withContext(Dispatchers.Main) {
+          startForegroundAsSpecialUse()
         }
         isCapturing.set(false)
         // Restore overlay for future captures
@@ -189,7 +204,7 @@ class QuickCaptureService : Service() {
     }
   }
 
-  private fun startForegroundServiceWithNotification() {
+  private fun buildNotification(): Notification {
     val stopIntent = Intent(this, QuickCaptureService::class.java).apply {
       action = ACTION_STOP
     }
@@ -206,7 +221,7 @@ class QuickCaptureService : Service() {
       PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
     )
 
-    val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
+    return NotificationCompat.Builder(this, CHANNEL_ID)
       .setContentTitle("SnapContact Quick Capture Active")
       .setContentText("Tap the floating icon over Instagram, LinkedIn, or WhatsApp to capture contacts")
       .setSmallIcon(android.R.drawable.ic_menu_camera)
@@ -215,15 +230,56 @@ class QuickCaptureService : Service() {
       .setOngoing(true)
       .setPriority(NotificationCompat.PRIORITY_LOW)
       .build()
+  }
 
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-      startForeground(
-        NOTIFICATION_ID,
-        notification,
-        ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
-      )
-    } else {
-      startForeground(NOTIFICATION_ID, notification)
+  private fun startForegroundAsSpecialUse() {
+    val notification = buildNotification()
+    try {
+      if (Build.VERSION.SDK_INT >= 34) {
+        startForeground(
+          NOTIFICATION_ID,
+          notification,
+          ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+        )
+      } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        startForeground(
+          NOTIFICATION_ID,
+          notification,
+          ServiceInfo.FOREGROUND_SERVICE_TYPE_NONE
+        )
+      } else {
+        startForeground(NOTIFICATION_ID, notification)
+      }
+    } catch (e: Exception) {
+      Log.e(TAG, "Error starting foreground as specialUse, fallback to standard", e)
+      try {
+        startForeground(NOTIFICATION_ID, notification)
+      } catch (inner: Exception) {
+        Log.e(TAG, "Fatal fallback startForeground failure", inner)
+      }
+    }
+  }
+
+  private fun upgradeForegroundToMediaProjection() {
+    val notification = buildNotification()
+    try {
+      if (Build.VERSION.SDK_INT >= 34) {
+        startForeground(
+          NOTIFICATION_ID,
+          notification,
+          ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE or ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+        )
+      } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        startForeground(
+          NOTIFICATION_ID,
+          notification,
+          ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+        )
+      } else {
+        startForeground(NOTIFICATION_ID, notification)
+      }
+    } catch (e: Exception) {
+      Log.e(TAG, "Error promoting foreground service to mediaProjection", e)
     }
   }
 

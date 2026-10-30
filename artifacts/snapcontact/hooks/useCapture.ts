@@ -322,12 +322,16 @@ export function useCapture() {
       return;
     }
 
-    const started = await device.startQuickCapture();
-    if (started) {
-      setQuickCaptureActive(true);
-      setNotice(R.quickCaptureStarted);
-    } else {
-      setError(R.quickCaptureFailed);
+    try {
+      const started = await device.startQuickCapture();
+      if (started) {
+        setQuickCaptureActive(true);
+        setNotice(R.quickCaptureStarted);
+      } else {
+        setError(R.quickCaptureFailed);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : R.quickCaptureFailed);
     }
   };
 

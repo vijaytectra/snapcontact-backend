@@ -34,6 +34,7 @@ function withSnapCapture(config) {
     const neededPermissions = [
       'android.permission.SYSTEM_ALERT_WINDOW',
       'android.permission.FOREGROUND_SERVICE',
+      'android.permission.FOREGROUND_SERVICE_SPECIAL_USE',
       'android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION',
       'android.permission.POST_NOTIFICATIONS',
     ];
@@ -57,14 +58,25 @@ function withSnapCapture(config) {
     });
 
     application.service = application.service ?? [];
-    if (!application.service.some(s => s.$['android:name'] === 'com.snapcontact.capture.QuickCaptureService')) {
+    let quickCaptureService = application.service.find(s => s.$['android:name'] === 'com.snapcontact.capture.QuickCaptureService');
+    const serviceProperty = [{
+      $: {
+        'android:name': 'android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE',
+        'android:value': 'Floating overlay button for screen contact capture',
+      },
+    }];
+    if (!quickCaptureService) {
       application.service.push({
         $: {
           'android:name': 'com.snapcontact.capture.QuickCaptureService',
-          'android:foregroundServiceType': 'mediaProjection',
+          'android:foregroundServiceType': 'specialUse|mediaProjection',
           'android:exported': 'false',
         },
+        property: serviceProperty,
       });
+    } else {
+      quickCaptureService.$['android:foregroundServiceType'] = 'specialUse|mediaProjection';
+      quickCaptureService.property = serviceProperty;
     }
 
     application.activity = application.activity ?? [];

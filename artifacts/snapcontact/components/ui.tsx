@@ -11,7 +11,10 @@ export const F = { r: 'Inter_400Regular', m: 'Inter_500Medium', s: 'Inter_600Sem
 export function useInsets() {
   const i = useSafeAreaInsets();
   const web = Platform.OS === 'web';
-  return { top: web ? Math.max(i.top, 67) : i.top, bottom: web ? Math.max(i.bottom, 34) : i.bottom };
+  return {
+    top: web ? Math.max(i.top, 67) : Math.max(i.top, 44),
+    bottom: web ? Math.max(i.bottom, 34) : Math.max(i.bottom, 16),
+  };
 }
 
 export const tap = (style: 'light' | 'medium' | 'success' | 'warning' = 'light') => {
@@ -45,8 +48,34 @@ export function Button({ label, onPress, icon, variant = 'primary', disabled, lo
   disabled?: boolean; loading?: boolean; testID?: string; hint?: string; compact?: boolean;
 }) {
   const c = useColors();
-  const bg = variant === 'primary' ? c.primary : variant === 'danger' ? c.destructive : variant === 'secondary' ? c.secondary : 'transparent';
-  const fg = variant === 'primary' ? c.primaryForeground : variant === 'danger' ? c.destructiveForeground : variant === 'ghost' ? c.mutedForeground : c.secondaryForeground;
+  const isPrimary = variant === 'primary';
+  const isDanger = variant === 'danger';
+  const isSecondary = variant === 'secondary';
+
+  const bg = isPrimary
+    ? '#FFFFFF'
+    : isDanger
+    ? 'rgba(239, 68, 68, 0.14)'
+    : isSecondary
+    ? c.secondary
+    : 'transparent';
+
+  const fg = isPrimary
+    ? '#080809'
+    : isDanger
+    ? '#EF4444'
+    : isSecondary
+    ? '#F8F8FA'
+    : '#A1A1AA';
+
+  const border = isPrimary
+    ? 'transparent'
+    : isDanger
+    ? 'rgba(239, 68, 68, 0.28)'
+    : isSecondary
+    ? c.border
+    : 'transparent';
+
   return (
     <PressScale
       testID={testID}
@@ -56,15 +85,36 @@ export function Button({ label, onPress, icon, variant = 'primary', disabled, lo
       accessibilityState={{ disabled: !!disabled || !!loading, busy: !!loading }}
       disabled={disabled || loading}
       onPress={() => { tap(); onPress(); }}
-      style={{ backgroundColor: bg, minHeight: compact ? 44 : 56, borderRadius: 999, paddingHorizontal: 22, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, opacity: disabled ? 0.45 : 1 }}
+      style={{
+        backgroundColor: bg,
+        minHeight: compact ? 42 : 54,
+        borderRadius: 999,
+        borderWidth: border !== 'transparent' ? 1 : 0,
+        borderColor: border,
+        paddingHorizontal: compact ? 16 : 24,
+        paddingVertical: compact ? 10 : 14,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 9,
+        opacity: disabled ? 0.4 : 1,
+      }}
     >
-      {loading ? <ActivityIndicator color={fg} /> : icon ? <Ionicons name={icon} size={20} color={fg} /> : null}
-      <Text style={{ color: fg, fontFamily: F.s, fontSize: 16, flexShrink: 1, textAlign: 'center' }}>{label}</Text>
+      {loading ? (
+        <ActivityIndicator color={fg} size="small" />
+      ) : icon ? (
+        <Ionicons name={icon} size={compact ? 18 : 20} color={fg} />
+      ) : null}
+      <Text style={{ color: fg, fontFamily: isPrimary ? F.b : F.s, fontSize: compact ? 14 : 16, letterSpacing: -0.2, textAlign: 'center' }}>
+        {label}
+      </Text>
     </PressScale>
   );
 }
 
-export function IconButton({ icon, label, onPress, testID, disabled, color }: { icon: IconName; label: string; onPress: () => void; testID?: string; disabled?: boolean; color?: string }) {
+export function IconButton({ icon, label, onPress, testID, disabled, color, size = 44 }: {
+  icon: IconName; label: string; onPress: () => void; testID?: string; disabled?: boolean; color?: string; size?: number;
+}) {
   const c = useColors();
   return (
     <PressScale
@@ -74,9 +124,19 @@ export function IconButton({ icon, label, onPress, testID, disabled, color }: { 
       accessibilityState={{ disabled: !!disabled }}
       disabled={disabled}
       onPress={() => { tap(); onPress(); }}
-      style={{ width: 48, height: 48, alignItems: 'center', justifyContent: 'center', opacity: disabled ? 0.35 : 1 }}
+      style={{
+        width: size,
+        height: size,
+        borderRadius: size / 2,
+        backgroundColor: c.secondary,
+        borderWidth: 1,
+        borderColor: c.border,
+        alignItems: 'center',
+        justifyContent: 'center',
+        opacity: disabled ? 0.35 : 1,
+      }}
     >
-      <Ionicons name={icon} size={24} color={color ?? c.foreground} />
+      <Ionicons name={icon} size={Math.round(size * 0.48)} color={color ?? c.foreground} />
     </PressScale>
   );
 }
@@ -91,10 +151,22 @@ export function Checkbox({ checked, onChange, label, testID, disabled = false }:
       accessibilityState={{ checked, disabled }}
       disabled={disabled}
       onPress={() => { tap(); onChange(!checked); }}
-      style={{ width: 48, height: 48, alignItems: 'center', justifyContent: 'center' }}
+      style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}
+      hitSlop={6}
     >
-      <View style={{ width: 26, height: 26, borderRadius: 9, borderWidth: 2, borderColor: checked ? c.primary : c.border, backgroundColor: checked ? c.primary : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
-        {checked ? <Ionicons name="checkmark" size={18} color={c.primaryForeground} /> : null}
+      <View
+        style={{
+          width: 24,
+          height: 24,
+          borderRadius: 7,
+          borderWidth: 1.5,
+          borderColor: checked ? '#FFFFFF' : c.border,
+          backgroundColor: checked ? '#FFFFFF' : c.secondary,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        {checked ? <Ionicons name="checkmark-sharp" size={16} color="#080809" /> : null}
       </View>
     </Pressable>
   );
@@ -104,32 +176,51 @@ export function Banner({ kind, text, onDismiss, action, testID }: { kind: 'error
   const c = useColors();
   const err = kind === 'error';
   return (
-    <View testID={testID} accessibilityRole={err ? 'alert' : undefined} accessibilityLiveRegion="polite"
-      style={{ backgroundColor: err ? c.destructive + '1A' : c.accent + '26', borderColor: err ? c.destructive : c.accent, borderWidth: 1, borderRadius: 14, padding: 14, flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
-      <Ionicons name={err ? 'alert-circle' : 'information-circle'} size={22} color={err ? c.destructive : c.foreground} />
-      <View style={{ flex: 1, gap: 8 }}>
-        <Text style={{ color: c.foreground, fontFamily: F.m, fontSize: 15, lineHeight: 21 }}>{text}</Text>
+    <View
+      testID={testID}
+      accessibilityRole={err ? 'alert' : undefined}
+      accessibilityLiveRegion="polite"
+      style={{
+        backgroundColor: err ? 'rgba(239, 68, 68, 0.12)' : c.card,
+        borderColor: err ? 'rgba(239, 68, 68, 0.28)' : c.border,
+        borderWidth: 1,
+        borderRadius: 16,
+        padding: 15,
+        flexDirection: 'row',
+        gap: 12,
+        alignItems: 'flex-start',
+      }}
+    >
+      <Ionicons name={err ? 'alert-circle' : 'information-circle'} size={22} color={err ? c.destructive : '#A1A1AA'} style={{ marginTop: 1 }} />
+      <View style={{ flex: 1, gap: 6 }}>
+        <Text style={{ color: c.foreground, fontFamily: F.m, fontSize: 14, lineHeight: 20 }}>{text}</Text>
         {action ? (
-          <Pressable accessibilityRole="button" accessibilityLabel={action.label} onPress={() => { tap(); action.onPress(); }} style={{ minHeight: 44, justifyContent: 'center' }} testID={testID ? testID + '-action' : undefined}>
-            <Text style={{ color: c.primary, fontFamily: F.b, fontSize: 15 }}>{action.label}</Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={action.label}
+            onPress={() => { tap(); action.onPress(); }}
+            style={{ minHeight: 36, justifyContent: 'center' }}
+            testID={testID ? testID + '-action' : undefined}
+          >
+            <Text style={{ color: '#FFFFFF', fontFamily: F.b, fontSize: 14, textDecorationLine: 'underline' }}>{action.label}</Text>
           </Pressable>
         ) : null}
       </View>
-      {onDismiss ? <IconButton icon="close" label="Dismiss message" onPress={onDismiss} testID={testID ? testID + '-dismiss' : undefined} /> : null}
+      {onDismiss ? <IconButton icon="close" label="Dismiss message" onPress={onDismiss} testID={testID ? testID + '-dismiss' : undefined} size={32} /> : null}
     </View>
   );
 }
 
 export function Skeleton({ h, w }: { h: number; w?: number | string }) {
   const c = useColors();
-  const o = useSharedValue(0.5);
+  const o = useSharedValue(0.4);
   React.useEffect(() => {
-    o.value = withTiming(1, { duration: 900 });
-    const t = setInterval(() => { o.value = withTiming(o.value > 0.7 ? 0.5 : 1, { duration: 900 }); }, 900);
+    o.value = withTiming(0.85, { duration: 800 });
+    const t = setInterval(() => { o.value = withTiming(o.value > 0.6 ? 0.35 : 0.85, { duration: 800 }); }, 800);
     return () => clearInterval(t);
   }, [o]);
   const a = useAnimatedStyle(() => ({ opacity: o.value }));
-  return <Animated.View style={[{ height: h, width: (w ?? '100%') as any, borderRadius: 14, backgroundColor: c.muted }, a]} />;
+  return <Animated.View style={[{ height: h, width: (w ?? '100%') as any, borderRadius: 16, backgroundColor: c.secondary }, a]} />;
 }
 
 export const sh = StyleSheet.create({ row: { flexDirection: 'row', alignItems: 'center' } });

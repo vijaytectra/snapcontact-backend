@@ -1,6 +1,6 @@
 export const S = {
   appName: 'SnapContact',
-  tagline: 'Numbers from screenshots, into your contacts.',
+  tagline: 'Screenshots to contacts.',
   welcome: {
     title: 'Screenshot in.\nContact out.',
     body: 'Found a business number while traveling? Snap or import it, check it, and save it. Nothing is written until you say so.',

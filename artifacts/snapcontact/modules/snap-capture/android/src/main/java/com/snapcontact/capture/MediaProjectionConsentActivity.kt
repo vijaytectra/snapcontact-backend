@@ -14,7 +14,7 @@ class MediaProjectionConsentActivity : Activity() {
 
     fun launch(context: Context) {
       val intent = Intent(context, MediaProjectionConsentActivity::class.java).apply {
-        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NO_ANIMATION)
       }
       context.startActivity(intent)
     }
@@ -22,11 +22,15 @@ class MediaProjectionConsentActivity : Activity() {
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+    @Suppress("DEPRECATION")
+    overridePendingTransition(0, 0)
     val projectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as? MediaProjectionManager
     if (projectionManager == null) {
       Log.e(TAG, "MediaProjectionManager not available")
       QuickCaptureService.onConsentDenied()
       finish()
+      @Suppress("DEPRECATION")
+      overridePendingTransition(0, 0)
       return
     }
 
@@ -37,6 +41,8 @@ class MediaProjectionConsentActivity : Activity() {
       Log.e(TAG, "Failed launching MediaProjection consent dialog", e)
       QuickCaptureService.onConsentDenied()
       finish()
+      @Suppress("DEPRECATION")
+      overridePendingTransition(0, 0)
     }
   }
 
@@ -55,6 +61,8 @@ class MediaProjectionConsentActivity : Activity() {
       }
     }
     finish()
+    @Suppress("DEPRECATION")
+    overridePendingTransition(0, 0)
   }
 
   override fun onDestroy() {
