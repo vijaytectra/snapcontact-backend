@@ -2,6 +2,7 @@
   "name": "snap-capture",
   "version": "1.0.0",
   "platforms": ["apple", "android"],
+  "publication": { "version": "1.0.0" },
   "apple": { "modules": ["SnapCaptureModule"] },
   "android": { "modules": ["com.snapcontact.capture.SnapCaptureModule"] }
 }
