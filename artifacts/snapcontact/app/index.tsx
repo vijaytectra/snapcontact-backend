@@ -59,7 +59,7 @@ export default function Index() {
   ]);
 
   const flatListRef = useRef<FlatList>(null);
-  const textInputRef = useRef<TextInput>(null);
+  const textInputRef = useRef<React.ComponentRef<typeof TextInput>>(null);
 
   useEffect(() => {
     if (cap.imageUri && cap.error) setRawOpen(true);
