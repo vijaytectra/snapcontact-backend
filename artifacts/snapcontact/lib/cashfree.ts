@@ -1,9 +1,4 @@
-/**
- * Cashfree Payments SDK & Client Integration
- * 
- * Supports Cashfree PG Orders, Payment Sessions, and Subscriptions.
- * Compatible with web checkout and React Native in-app checkout.
- */
+import { apiFetch } from './api.ts';
 
 export type CashfreeEnvironment = 'SANDBOX' | 'PRODUCTION';
 
@@ -79,39 +74,56 @@ export const CASHFREE_PAYMENT_METHODS: CashfreePaymentMethodOption[] = [
   },
 ];
 
-/**
- * Creates a Cashfree order for SnapContact Annual Subscription.
- */
-export function createCashfreeOrder(
+export async function createCashfreeOrder(
   customer: CashfreeCustomer,
-  planAmount = 999
-): CashfreeOrder {
-  const timestamp = Date.now();
-  const randomSuffix = Math.random().toString(36).substring(2, 7).toUpperCase();
-  const orderId = `CF_ORDER_${timestamp}_${randomSuffix}`;
-  const paymentSessionId = `session_${timestamp}_${Math.random().toString(36).substring(2, 9)}`;
-
-  return {
-    orderId,
-    orderAmount: planAmount,
-    orderCurrency: 'INR',
-    orderNote: 'SnapContact Annual Subscription (1st Week Trial + 15-Day Auto-Renewal Notice)',
-    paymentSessionId,
-    customerDetails: customer,
-    createdAt: new Date().toISOString(),
-    status: 'ACTIVE',
-  };
+  planAmount = 99
+): Promise<CashfreeOrder> {
+  if (!process.env.EXPO_PUBLIC_API_URL) {
+    const timestamp = Date.now();
+    const randomSuffix = Math.random().toString(36).substring(2, 7).toUpperCase();
+    const orderId = `CF_ORDER_${timestamp}_${randomSuffix}`;
+    const paymentSessionId = `session_${timestamp}_${Math.random().toString(36).substring(2, 9)}`;
+    return {
+      orderId,
+      orderAmount: planAmount,
+      orderCurrency: 'INR',
+      orderNote: 'SnapContact Annual Subscription (1st Week Trial + 15-Day Auto-Renewal Notice)',
+      paymentSessionId,
+      customerDetails: customer,
+      createdAt: new Date().toISOString(),
+      status: 'ACTIVE',
+    };
+  }
+  try {
+    const data = await apiFetch('/cashfree/orders', {
+      method: 'POST',
+      body: JSON.stringify({
+        customerEmail: customer.customerEmail,
+        customerName: customer.customerName,
+        customerPhone: customer.customerPhone,
+        amount: planAmount,
+      }),
+    });
+    return {
+      orderId: data.orderId,
+      orderAmount: planAmount,
+      orderCurrency: 'INR',
+      orderNote: 'SnapContact Annual Subscription',
+      paymentSessionId: data.paymentSessionId,
+      customerDetails: customer,
+      createdAt: new Date().toISOString(),
+      status: 'ACTIVE',
+    };
+  } catch (e: any) {
+    throw new Error(e?.message || 'Unable to create payment order. Check your connection and try again.');
+  }
 }
 
-/**
- * Verifies and finalizes a Cashfree payment session.
- */
 export async function processCashfreePayment(
   order: CashfreeOrder,
   method: 'UPI' | 'CARD' | 'NETBANKING' | 'WALLET',
   details: string
 ): Promise<CashfreePaymentResult> {
-  // Simulate network roundtrip to Cashfree Payment Gateway
   await new Promise((resolve) => setTimeout(resolve, 800));
 
   const paymentId = `cf_pay_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
@@ -130,4 +142,3 @@ export async function processCashfreePayment(
     message: 'Payment completed successfully through Cashfree Payments',
   };
 }
-

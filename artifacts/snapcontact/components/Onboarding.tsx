@@ -5,13 +5,29 @@ import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { F, PressScale, tap, useInsets } from './ui';
 
+// The background artwork is a 390x844 composition; its phones start at y=258.
+const ART_W = 390;
+const ART_H = 844;
+const ART_PHONES_TOP = 258;
+// Height of the logo + headline + subtitle block at scale 1.
+const TEXT_BLOCK_H = 186;
+const BG = '#061738';
+
 export function Onboarding({ onDone }: { onDone: () => void }) {
   const i = useInsets();
   const { height: windowHeight, width: windowWidth } = useWindowDimensions();
 
-  // Responsive layout scaling
-  const isCompact = windowHeight < 720;
-  const contentMaxWidth = Math.min(windowWidth, 480);
+  // The artwork always fills the screen height, so it scales with height.
+  // On taller-than-design screens it is cropped at the sides; on wider ones it
+  // sits in a centered column and the sides get a blurred fill.
+  const k = windowHeight / ART_H;
+  const artWidth = ART_W * k;
+  const boxWidth = Math.min(windowWidth, artWidth);
+  const s = Math.max(0.72, Math.min(1, k, windowWidth / ART_W));
+  const letterboxed = artWidth < windowWidth - 1;
+
+  // Keep the text clear of the phones, even when the top inset is large.
+  const textTop = Math.max(16, Math.min(i.top, ART_PHONES_TOP * k - TEXT_BLOCK_H * s - 12));
 
   return (
     <View
@@ -21,45 +37,65 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
         height: '100%',
         position: 'relative',
         overflow: 'hidden',
-        backgroundColor: '#091838',
+        backgroundColor: BG,
       }}
       testID="onboarding"
     >
-      {/* 1. Underlying Seamless Royal Blue Gradient */}
-      <LinearGradient
-        colors={['#1F4A89', '#143368', '#0D2146', '#081634']}
-        start={{ x: 0.1, y: 0 }}
-        end={{ x: 0.9, y: 1 }}
-        style={StyleSheet.absoluteFill}
-      />
+      {/* 1. Side fill for wide screens: the same artwork, blurred and dimmed */}
+      {letterboxed ? (
+        <>
+          <Image
+            source={require('@/assets/images/onboarding_bg.jpg')}
+            style={StyleSheet.absoluteFill}
+            resizeMode="cover"
+            blurRadius={40}
+          />
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(3, 14, 37, 0.55)' }]} />
+        </>
+      ) : null}
 
-      {/* 2. Responsive Background Image: Contains full aspect ratio composition without cropping */}
+      {/* 2. Artwork at its native proportions, full screen height */}
       <Image
         source={require('@/assets/images/onboarding_bg.jpg')}
         style={{
           position: 'absolute',
           top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          width: '100%',
-          height: '100%',
+          height: windowHeight,
+          width: artWidth,
+          left: (windowWidth - artWidth) / 2,
         }}
-        resizeMode="contain"
+        resizeMode="cover"
         accessibilityLabel="SnapContact preview showing contact extraction, live scanner, and contact profile"
       />
 
-      {/* 3. Header & Typography Section: Positioned relative near the top with safe area handling */}
+      {/* Soften the artwork's left and right edges into the side fill */}
+      {letterboxed ? (
+        <>
+          <LinearGradient
+            colors={[BG, 'rgba(6, 23, 56, 0)']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={{ position: 'absolute', top: 0, bottom: 0, width: 48, left: (windowWidth - artWidth) / 2 }}
+          />
+          <LinearGradient
+            colors={['rgba(6, 23, 56, 0)', BG]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={{ position: 'absolute', top: 0, bottom: 0, width: 48, right: (windowWidth - artWidth) / 2 }}
+          />
+        </>
+      ) : null}
+
+      {/* 3. Header & Typography, in the same column as the artwork */}
       <Animated.View
         entering={FadeInDown.duration(450)}
         style={{
-          position: 'relative',
+          position: 'absolute',
           zIndex: 2,
-          paddingTop: Math.max(i.top, 40),
-          paddingHorizontal: 24,
-          maxWidth: contentMaxWidth,
-          width: '100%',
-          alignSelf: 'center',
+          top: textTop,
+          width: boxWidth,
+          left: (windowWidth - boxWidth) / 2,
+          paddingHorizontal: 24 * s,
         }}
       >
         {/* App Logo & Title */}
@@ -67,32 +103,27 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
           style={{
             flexDirection: 'row',
             alignItems: 'center',
-            gap: 10,
-            marginBottom: 6,
+            gap: 10 * s,
+            marginBottom: 28 * s,
           }}
         >
           <View
             style={{
-              width: 32,
-              height: 32,
-              borderRadius: 8,
+              width: 34 * s,
+              height: 34 * s,
+              borderRadius: 9 * s,
               backgroundColor: '#FFFFFF',
               alignItems: 'center',
               justifyContent: 'center',
-              shadowColor: '#000',
-              shadowOffset: { width: 0, height: 2 },
-              shadowOpacity: 0.15,
-              shadowRadius: 4,
-              elevation: 2,
             }}
           >
-            <Ionicons name="scan-outline" size={19} color="#080809" />
+            <Ionicons name="scan-outline" size={20 * s} color="#080809" />
           </View>
           <Text
             style={{
               color: '#FFFFFF',
-              fontFamily: F.b,
-              fontSize: 22,
+              fontFamily: F.s,
+              fontSize: 22 * s,
               letterSpacing: -0.4,
             }}
           >
@@ -105,10 +136,10 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
           accessibilityRole="header"
           style={{
             fontFamily: F.b,
-            fontSize: isCompact ? 25 : 28,
-            lineHeight: isCompact ? 30 : 34,
-            letterSpacing: -0.8,
-            marginBottom: 4,
+            fontSize: 30 * s,
+            lineHeight: 36 * s,
+            letterSpacing: -0.8 * s,
+            marginBottom: 6 * s,
           }}
         >
           <Text style={{ color: '#FFFFFF' }}>Your </Text>
@@ -119,10 +150,10 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
         {/* Supporting Subtitle */}
         <Text
           style={{
-            color: '#CBD5E1',
+            color: '#E2E8F0',
             fontFamily: F.r,
-            fontSize: isCompact ? 13.5 : 14.5,
-            lineHeight: isCompact ? 18 : 20,
+            fontSize: 16 * s,
+            lineHeight: 23 * s,
             letterSpacing: -0.2,
           }}
         >
@@ -130,19 +161,16 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
         </Text>
       </Animated.View>
 
-      {/* 4. Footer Section: Anchored near the bottom with safe area insets */}
+      {/* 4. Footer: Get Started, anchored near the bottom of the same column */}
       <Animated.View
         entering={FadeInDown.delay(350).duration(450)}
         style={{
           position: 'absolute',
-          bottom: Math.max(i.bottom, 16) + (isCompact ? 4 : 8),
-          left: 0,
-          right: 0,
           zIndex: 3,
-          paddingHorizontal: 24,
-          maxWidth: contentMaxWidth,
-          width: '100%',
-          alignSelf: 'center',
+          bottom: Math.max(i.bottom, 16) + 18 * s,
+          width: boxWidth,
+          left: (windowWidth - boxWidth) / 2,
+          paddingHorizontal: 20 * s,
         }}
       >
         <PressScale
@@ -155,12 +183,12 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
           }}
           style={{
             backgroundColor: '#FFFFFF',
-            minHeight: 50,
+            minHeight: Math.max(44, 52 * s),
             borderRadius: 999,
             flexDirection: 'row',
             alignItems: 'center',
             justifyContent: 'center',
-            gap: 8,
+            gap: 6,
             paddingHorizontal: 28,
             shadowColor: '#000',
             shadowOffset: { width: 0, height: 4 },
@@ -171,29 +199,16 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
         >
           <Text
             style={{
-              color: '#080809',
-              fontFamily: F.b,
-              fontSize: 16,
-              letterSpacing: -0.2,
+              color: '#111111',
+              fontFamily: F.m,
+              fontSize: 15,
+              letterSpacing: -0.1,
             }}
           >
             Get Started
           </Text>
-          <Ionicons name="arrow-forward" size={18} color="#080809" />
+          <Ionicons name="arrow-forward" size={12} color="#111111" />
         </PressScale>
-
-        {/* Subtle Home Indicator Bar */}
-        <View
-          style={{
-            width: 112,
-            height: 4,
-            borderRadius: 2,
-            backgroundColor: '#FFFFFF',
-            opacity: 0.75,
-            alignSelf: 'center',
-            marginTop: 14,
-          }}
-        />
       </Animated.View>
     </View>
   );

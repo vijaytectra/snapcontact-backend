@@ -178,6 +178,37 @@ export function Checkbox({ checked, onChange, label, testID, disabled = false }:
   );
 }
 
+// Light-surface square checkbox used by the review and contacts list screens.
+export function LightCheckbox({ checked, onChange, label, testID, disabled = false, size = 22 }: { checked: boolean; onChange: (v: boolean) => void; label: string; testID?: string; disabled?: boolean; size?: number }) {
+  return (
+    <Pressable
+      testID={testID}
+      accessibilityRole="checkbox"
+      accessibilityLabel={label}
+      accessibilityState={{ checked, disabled }}
+      disabled={disabled}
+      onPress={() => { tap(); onChange(!checked); }}
+      style={{ width: 32, height: 44, alignItems: 'center', justifyContent: 'center', opacity: disabled ? 0.4 : 1 }}
+      hitSlop={6}
+    >
+      <View
+        style={{
+          width: size,
+          height: size,
+          borderRadius: 4,
+          borderWidth: 1,
+          borderColor: checked ? '#6B7280' : '#BFC5CE',
+          backgroundColor: '#FFFFFF',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        {checked ? <Ionicons name="checkmark" size={size - 6} color="#111111" /> : null}
+      </View>
+    </Pressable>
+  );
+}
+
 export function Banner({ kind, text, onDismiss, action, testID }: { kind: 'error' | 'notice'; text: string; onDismiss?: () => void; action?: { label: string; onPress: () => void }; testID?: string }) {
   const c = useColors();
   const err = kind === 'error';

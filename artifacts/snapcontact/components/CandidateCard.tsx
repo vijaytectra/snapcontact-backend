@@ -3,7 +3,7 @@ import { Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { S } from '@/lib/strings';
-import { Checkbox, F, PressScale, tap } from './ui';
+import { F, PressScale, tap } from './ui';
 
 export type Cand = {
   id: string;
@@ -34,31 +34,33 @@ function BlackActionPill({
   id: string;
 }) {
   return (
-    <PressScale
-      testID={id}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      accessibilityState={{ disabled: !!disabled }}
-      disabled={disabled}
-      onPress={() => {
-        tap();
-        onPress();
-      }}
-      style={{
-        height: 38,
-        borderRadius: 999,
-        backgroundColor: '#000000',
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: 6,
-        paddingHorizontal: 16,
-        opacity: disabled ? 0.35 : 1,
-      }}
-    >
-      <Ionicons name={icon} size={14} color="#FFFFFF" />
-      <Text style={{ fontFamily: F.s, fontSize: 13, color: '#FFFFFF' }}>{label}</Text>
-    </PressScale>
+    <View style={{ flexGrow: 1, flexBasis: 0, minWidth: 92 }}>
+      <PressScale
+        testID={id}
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        accessibilityState={{ disabled: !!disabled }}
+        disabled={disabled}
+        onPress={() => {
+          tap();
+          onPress();
+        }}
+        style={{
+          height: 36,
+          borderRadius: 10,
+          backgroundColor: '#000000',
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 6,
+          paddingHorizontal: 10,
+          opacity: disabled ? 0.35 : 1,
+        }}
+      >
+        <Ionicons name={icon} size={16} color="#FFFFFF" />
+        <Text style={{ fontFamily: F.m, fontSize: 13, color: '#FFFFFF' }}>{label}</Text>
+      </PressScale>
+    </View>
   );
 }
 
@@ -84,15 +86,23 @@ export function CandidateCard({
   const bad = !cand.valid;
 
   const inputStyle = {
-    fontFamily: F.r,
+    fontFamily: F.m,
     fontSize: 15,
-    color: '#0F172A',
+    color: '#111111',
     minHeight: 46,
     paddingHorizontal: 14,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#FFFFFF',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#D7DCE3',
+  } as const;
+
+  const labelStyle = {
+    fontFamily: F.s,
+    fontSize: 12,
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+    color: '#111111',
   } as const;
 
   return (
@@ -101,78 +111,49 @@ export function CandidateCard({
       testID={`candidate-${cand.id}`}
       style={{
         backgroundColor: '#FFFFFF',
-        borderRadius: 20,
-        borderWidth: 1,
-        borderColor: '#E2E8F0',
-        padding: 18,
+        borderRadius: 22,
+        paddingHorizontal: 16,
+        paddingTop: 8,
+        paddingBottom: 16,
         gap: 14,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.04,
-        shadowRadius: 8,
-        elevation: 2,
       }}
     >
-      {/* Header Row: ✓ NUMBER N + Selection Checkbox */}
-      <View
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          paddingBottom: 10,
-          borderBottomWidth: 1,
-          borderBottomColor: '#F1F5F9',
+      {/* Header Row: ✓ NUMBER N (tap to include or skip this number) */}
+      <PressScale
+        testID={`select-${cand.id}`}
+        accessibilityRole="checkbox"
+        accessibilityLabel={`Select contact ${index + 1}${cand.name ? ', ' + cand.name : ''}`}
+        accessibilityState={{ checked: cand.selected, disabled: bad }}
+        disabled={bad}
+        onPress={() => {
+          tap();
+          onChange({ selected: !cand.selected });
         }}
+        style={{ flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 36, alignSelf: 'flex-start' }}
       >
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <Checkbox
-            testID={`select-${cand.id}`}
-            checked={cand.selected}
-            disabled={bad}
-            onChange={(v) => onChange({ selected: v })}
-            label={`Select contact ${index + 1}${cand.name ? ', ' + cand.name : ''}`}
-          />
-          <Text
-            style={{
-              fontFamily: F.b,
-              fontSize: 14,
-              letterSpacing: 0.5,
-              textTransform: 'uppercase',
-              color: '#0F172A',
-            }}
-          >
-            {`NUMBER ${index + 1}`}
-            {cand.extension ? `  ·  ${S.review.ext(cand.extension)}` : ''}
-          </Text>
-        </View>
-
-        {total && total > 1 ? (
-          <View
-            style={{
-              backgroundColor: '#F1F5F9',
-              paddingHorizontal: 10,
-              paddingVertical: 4,
-              borderRadius: 8,
-            }}
-          >
-            <Text style={{ fontFamily: F.m, fontSize: 12, color: '#64748B' }}>
-              {`${index + 1} of ${total}`}
-            </Text>
-          </View>
-        ) : null}
-      </View>
-
-      {/* Field 1: Business Name */}
-      <View style={{ gap: 5 }}>
+        <Ionicons
+          name={cand.selected ? 'checkmark' : 'ellipse-outline'}
+          size={cand.selected ? 18 : 14}
+          color={cand.selected ? '#111111' : '#9AA5B5'}
+          style={{ width: 18, textAlign: 'center' }}
+        />
         <Text
           style={{
-            fontFamily: F.b,
-            fontSize: 11,
-            letterSpacing: 0.6,
+            fontFamily: F.m,
+            fontSize: 13,
+            letterSpacing: 0.5,
             textTransform: 'uppercase',
-            color: '#64748B',
+            color: cand.selected ? '#111111' : '#6B7280',
           }}
         >
+          {`NUMBER ${index + 1}`}
+          {cand.extension ? `  ·  ${S.review.ext(cand.extension)}` : ''}
+        </Text>
+      </PressScale>
+
+      {/* Field 1: Business Name */}
+      <View style={{ gap: 8 }}>
+        <Text style={labelStyle}>
           {S.review.name}
         </Text>
         <TextInput
@@ -181,23 +162,15 @@ export function CandidateCard({
           value={cand.name}
           onChangeText={(t) => onChange({ name: t })}
           placeholder={S.review.namePlaceholder}
-          placeholderTextColor="#94A3B8"
+          placeholderTextColor="#8A8F98"
           autoCapitalize="words"
           style={inputStyle}
         />
       </View>
 
       {/* Field 2: Phone Number */}
-      <View style={{ gap: 5 }}>
-        <Text
-          style={{
-            fontFamily: F.b,
-            fontSize: 11,
-            letterSpacing: 0.6,
-            textTransform: 'uppercase',
-            color: '#64748B',
-          }}
-        >
+      <View style={{ gap: 8 }}>
+        <Text style={labelStyle}>
           {S.review.number}
         </Text>
         <TextInput
@@ -211,8 +184,7 @@ export function CandidateCard({
           style={[
             inputStyle,
             {
-              borderColor: bad ? '#EF4444' : '#E2E8F0',
-              fontFamily: F.m,
+              borderColor: bad ? '#EF4444' : '#D7DCE3',
             },
           ]}
         />
@@ -264,17 +236,10 @@ export function CandidateCard({
       </View>
 
       {/* Field 3: Email Address (Optional) */}
-      <View style={{ gap: 5 }}>
-        <Text
-          style={{
-            fontFamily: F.b,
-            fontSize: 11,
-            letterSpacing: 0.6,
-            textTransform: 'uppercase',
-            color: '#64748B',
-          }}
-        >
-          {`${S.review.email} (OPTIONAL)`}
+      <View style={{ gap: 8 }}>
+        <Text style={labelStyle}>
+          {S.review.email}
+          <Text style={{ fontFamily: F.r, fontSize: 10, letterSpacing: 0.6, color: '#4B5563' }}>{'  (OPTIONAL)'}</Text>
         </Text>
         <TextInput
           testID={`email-${cand.id}`}
@@ -282,7 +247,7 @@ export function CandidateCard({
           value={cand.email ?? ''}
           onChangeText={(t) => onChange({ email: t })}
           placeholder="Email"
-          placeholderTextColor="#94A3B8"
+          placeholderTextColor="#8A8F98"
           keyboardType="email-address"
           autoCapitalize="none"
           autoCorrect={false}
@@ -291,16 +256,8 @@ export function CandidateCard({
       </View>
 
       {/* Field 4: Website */}
-      <View style={{ gap: 5 }}>
-        <Text
-          style={{
-            fontFamily: F.b,
-            fontSize: 11,
-            letterSpacing: 0.6,
-            textTransform: 'uppercase',
-            color: '#64748B',
-          }}
-        >
+      <View style={{ gap: 8 }}>
+        <Text style={labelStyle}>
           {S.review.website}
         </Text>
         <TextInput
@@ -309,7 +266,7 @@ export function CandidateCard({
           value={cand.website ?? ''}
           onChangeText={(t) => onChange({ website: t })}
           placeholder="Website"
-          placeholderTextColor="#94A3B8"
+          placeholderTextColor="#8A8F98"
           keyboardType="url"
           autoCapitalize="none"
           autoCorrect={false}
@@ -318,7 +275,7 @@ export function CandidateCard({
       </View>
 
       {/* Quick Action Pills: Copy, Call, WhatsApp */}
-      <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', paddingTop: 4 }}>
+      <View style={{ flexDirection: 'row', gap: 10, flexWrap: 'wrap', paddingTop: 2 }}>
         <BlackActionPill
           id={`copy-${cand.id}`}
           icon="copy-outline"

@@ -8,6 +8,7 @@ import { getCountries, type CountryCode } from 'libphonenumber-js/max';
 import { countryOptions, extractCandidates, prepareNumberCopy, validateNumber, type Candidate, type CountryOption } from '@/lib/phone';
 import * as device from '@/lib/device';
 import { runContactQueue } from '@/lib/contactQueue';
+import { addToOfflineQueue, getOfflineQueue, clearOfflineQueue, removeFromOfflineQueue } from '@/lib/offlineQueue';
 import { R } from '@/lib/runtimeStrings';
 
 export type { Candidate, CountryOption };
@@ -49,20 +50,38 @@ export function useCapture() {
     setImageUri(uri);
     if (previous !== uri) void device.deleteTemporaryImage(previous);
     setPhase('processing'); setOcrProgress(0); setError(null); setNotice(null); setOutcomes([]); setCandidates([]); setText('');
-    try {
-      const recognized = await device.recognize(uri, value => {
-        if (ticket === generation.current) setOcrProgress(value);
-      });
-      if (ticket !== generation.current) return;
-      setText(recognized);
-      setCandidates(extractCandidates(recognized, countryRef.current));
-      setPhase('review');
-      if (!recognized.trim()) setNotice(R.noReadableText);
-    } catch (err) {
-      if (ticket !== generation.current) return;
-      setError(err instanceof Error ? err.message : R.imageUnreadable);
-      setPhase('review');
-    } finally { if (ticket === generation.current) busy.current = false; }
+    const MAX_RETRIES = 2;
+    let lastErr: any = null;
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      if (ticket !== generation.current) { busy.current = false; return; }
+      try {
+        if (attempt > 0) {
+          setNotice(`Retrying recognition (attempt ${attempt + 1} of ${MAX_RETRIES + 1})…`);
+          await new Promise(r => setTimeout(r, 500 * attempt));
+        }
+        const recognized = await Promise.race([
+          device.recognize(uri, value => {
+            if (ticket === generation.current) setOcrProgress(value);
+          }),
+          new Promise<string>((_, reject) => setTimeout(() => reject(new Error('OCR timed out. Please try a clearer image.')), 30000)),
+        ]);
+        if (ticket !== generation.current) { busy.current = false; return; }
+        setText(recognized);
+        setCandidates(extractCandidates(recognized, countryRef.current));
+        setPhase('review');
+        if (!recognized.trim()) setNotice(R.noReadableText);
+        lastErr = null;
+        break;
+      } catch (err) {
+        lastErr = err;
+        if (ticket !== generation.current) { busy.current = false; return; }
+        if (attempt === MAX_RETRIES) {
+          setError(err instanceof Error ? err.message : R.imageUnreadable);
+          setPhase('review');
+        }
+      }
+    }
+    if (ticket === generation.current) busy.current = false;
   }, []);
 
   useEffect(() => {
@@ -228,14 +247,14 @@ export function useCapture() {
     const chosen = candidates.filter(row => row.selected && row.valid);
     if (!chosen.length) { setError(R.selectNumber); return; }
     busy.current = true; setPhase('saving'); setError(null); setOutcomes([]); setNotice(null);
+    const requests = chosen.flatMap(row => {
+      const checked = validateNumber(row.number, countryRef.current);
+      return checked.valid ? [{
+        id: row.id, name: row.name.trim(),
+        number: checked.e164 + (checked.extension ? `;ext=${checked.extension}` : ''),
+      }] : [];
+    });
     try {
-      const requests = chosen.flatMap(row => {
-        const checked = validateNumber(row.number, countryRef.current);
-        return checked.valid ? [{
-          id: row.id, name: row.name.trim(),
-          number: checked.e164 + (checked.extension ? `;ext=${checked.extension}` : ''),
-        }] : [];
-      });
       await runContactQueue(requests, device.createContact, result => {
         setOutcomes(old => [...old, result]);
         if (result.status === 'saved') setCandidates(old => old.map(c => c.id === result.id ? { ...c, selected: false } : c));
@@ -244,8 +263,41 @@ export function useCapture() {
         }
         if (result.status === 'error') setError(result.message ?? R.editorUnavailable);
       });
+    } catch (err) {
+      // Queue for later retry when the editor is unavailable / app interrupted
+      await addToOfflineQueue(requests);
+      setError(R.editorUnavailable);
     } finally { busy.current = false; setPhase('review'); }
   };
+  const processOfflineQueue = useCallback(async () => {
+    if (busy.current) return;
+    const pending = await getOfflineQueue();
+    if (!pending.length) return;
+    busy.current = true;
+    try {
+      await runContactQueue(pending, device.createContact, result => {
+        if (result.status === 'saved') void removeFromOfflineQueue(result.id);
+        if (result.status === 'cancelled' || result.status === 'error') {
+          // keep in queue for next attempt
+        }
+      });
+      const remaining = await getOfflineQueue();
+      if (remaining.length === 0) await clearOfflineQueue();
+    } catch {
+      // leave queue intact
+    } finally {
+      busy.current = false;
+    }
+  }, []);
+
+  useEffect(() => {
+    processOfflineQueue();
+    const sub = AppState.addEventListener('change', state => {
+      if (state === 'active') processOfflineQueue();
+    });
+    return () => sub.remove();
+  }, [processOfflineQueue]);
+
   const clear = () => {
     if (busy.current && phase === 'saving') return;
     generation.current++; busy.current = false;

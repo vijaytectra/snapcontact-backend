@@ -153,7 +153,7 @@ export function SubscriptionModal({
                 }}
               >
                 <Text style={{ fontFamily: F.b, fontSize: 32, color: '#FFFFFF', letterSpacing: -1 }}>
-                  ₹999
+                  ₹99
                 </Text>
                 <Text style={{ fontFamily: F.r, fontSize: 14, color: c.mutedForeground }}>
                   / year (₹0 for 1st week)
@@ -261,7 +261,7 @@ export function SubscriptionModal({
                       Day 7 — Annual Billing Begins
                     </Text>
                     <Text style={{ fontFamily: F.r, fontSize: 12, color: c.mutedForeground }}>
-                      1-year period starts at ₹999/year.
+                      1-year period starts at ₹99/year.
                     </Text>
                   </View>
                 </View>

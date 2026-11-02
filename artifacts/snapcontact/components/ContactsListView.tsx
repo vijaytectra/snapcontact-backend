@@ -3,7 +3,7 @@ import { ScrollView, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { Cand } from './CandidateCard';
-import { Checkbox, F, PressScale, tap } from './ui';
+import { F, LightCheckbox, PressScale, tap } from './ui';
 
 function getInitials(name: string, fallbackNumber: string): string {
   if (name && name.trim()) {
@@ -54,35 +54,34 @@ export function ContactsListView({
           backgroundColor: '#FFFFFF',
           borderRadius: 14,
           borderWidth: 1,
-          borderColor: '#E2E8F0',
+          borderColor: '#DDE3EA',
           paddingHorizontal: 14,
-          height: 48,
+          height: 44,
           gap: 10,
         }}
       >
-        <Ionicons name="search-outline" size={18} color="#94A3B8" />
+        <Ionicons name="search-outline" size={19} color="#6B7280" />
         <TextInput
           value={searchQuery}
           onChangeText={setSearchQuery}
           placeholder="Search name or phone number"
-          placeholderTextColor="#94A3B8"
+          placeholderTextColor="#8A8F98"
           style={{
             flex: 1,
             fontFamily: F.r,
-            fontSize: 14,
+            fontSize: 15,
             color: '#0F172A',
             height: '100%',
           }}
         />
-        {searchQuery ? (
-          <PressScale
-            onPress={() => setSearchQuery('')}
-            accessibilityRole="button"
-            accessibilityLabel="Clear search"
-          >
-            <Ionicons name="close-circle" size={18} color="#94A3B8" />
-          </PressScale>
-        ) : null}
+        <PressScale
+          onPress={() => setSearchQuery('')}
+          disabled={!searchQuery}
+          accessibilityRole="button"
+          accessibilityLabel="Clear search"
+        >
+          <Ionicons name="close-circle-outline" size={19} color="#6B7280" />
+        </PressScale>
       </View>
 
       {/* Select All & Delete Action Row */}
@@ -91,17 +90,18 @@ export function ContactsListView({
           flexDirection: 'row',
           alignItems: 'center',
           justifyContent: 'space-between',
-          paddingHorizontal: 4,
+          marginTop: -4,
+          marginBottom: -4,
         }}
       >
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <Checkbox
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <LightCheckbox
             testID="select-all-checkbox"
             checked={allSelected}
             onChange={onToggleAll}
             label="Select all contacts"
           />
-          <Text style={{ fontFamily: F.m, fontSize: 14, color: '#0F172A' }}>
+          <Text style={{ fontFamily: F.m, fontSize: 14, color: '#111111' }}>
             Select All
           </Text>
         </View>
@@ -116,15 +116,15 @@ export function ContactsListView({
               onDeleteSelected();
             }}
             style={{
-              paddingHorizontal: 14,
-              paddingVertical: 6,
-              borderRadius: 8,
+              paddingHorizontal: 10,
+              paddingVertical: 3,
+              borderRadius: 999,
               borderWidth: 1,
-              borderColor: '#E2E8F0',
+              borderColor: '#4B5563',
               backgroundColor: '#FFFFFF',
             }}
           >
-            <Text style={{ fontFamily: F.m, fontSize: 12, color: '#64748B' }}>
+            <Text style={{ fontFamily: F.m, fontSize: 12, color: '#111111' }}>
               Delete
             </Text>
           </PressScale>
@@ -146,22 +146,19 @@ export function ContactsListView({
               entering={FadeInDown.delay(Math.min(idx, 8) * 40).duration(300)}
               style={{
                 backgroundColor: '#FFFFFF',
-                borderRadius: 16,
+                borderRadius: 14,
                 borderWidth: 1,
-                borderColor: '#E2E8F0',
-                padding: 14,
+                borderColor: '#DDE3EA',
+                paddingLeft: 8,
+                paddingRight: 14,
+                minHeight: 66,
                 flexDirection: 'row',
                 alignItems: 'center',
-                gap: 12,
-                shadowColor: '#000',
-                shadowOffset: { width: 0, height: 1 },
-                shadowOpacity: 0.03,
-                shadowRadius: 4,
-                elevation: 1,
+                gap: 10,
               }}
             >
               {/* Checkbox */}
-              <Checkbox
+              <LightCheckbox
                 testID={`list-select-${cand.id}`}
                 checked={cand.selected}
                 disabled={!cand.valid}
@@ -175,14 +172,14 @@ export function ContactsListView({
                   width: 40,
                   height: 40,
                   borderRadius: 20,
-                  backgroundColor: '#F1F5F9',
+                  backgroundColor: '#FFFFFF',
                   borderWidth: 1,
-                  borderColor: '#E2E8F0',
+                  borderColor: '#222222',
                   alignItems: 'center',
                   justifyContent: 'center',
                 }}
               >
-                <Text style={{ fontFamily: F.b, fontSize: 13, color: '#334155' }}>
+                <Text style={{ fontFamily: F.s, fontSize: 13, color: '#111111' }}>
                   {initials}
                 </Text>
               </View>
@@ -192,9 +189,9 @@ export function ContactsListView({
                 <Text
                   numberOfLines={1}
                   style={{
-                    fontFamily: F.b,
-                    fontSize: 15,
-                    color: '#0F172A',
+                    fontFamily: F.m,
+                    fontSize: 16,
+                    color: '#2B5EA7',
                   }}
                 >
                   {cand.name || 'Unnamed Contact'}
@@ -202,9 +199,9 @@ export function ContactsListView({
                 <Text
                   numberOfLines={1}
                   style={{
-                    fontFamily: F.r,
-                    fontSize: 13,
-                    color: '#64748B',
+                    fontFamily: F.m,
+                    fontSize: 15,
+                    color: '#111111',
                   }}
                 >
                   {cand.formatted || cand.number}
@@ -223,13 +220,11 @@ export function ContactsListView({
                 style={{
                   width: 36,
                   height: 36,
-                  borderRadius: 10,
                   alignItems: 'center',
                   justifyContent: 'center',
-                  backgroundColor: '#F8FAFC',
                 }}
               >
-                <Ionicons name="pencil" size={16} color="#64748B" />
+                <Ionicons name="pencil" size={18} color="#111111" />
               </PressScale>
             </Animated.View>
           );
@@ -249,13 +244,16 @@ export function ContactsListView({
             flexDirection: 'row',
             alignItems: 'center',
             justifyContent: 'center',
-            gap: 6,
-            paddingVertical: 12,
-            marginTop: 4,
+            gap: 8,
+            paddingVertical: 7,
+            borderRadius: 10,
+            borderWidth: 1,
+            borderColor: '#DDE3EA',
+            backgroundColor: '#FFFFFF',
           }}
         >
-          <Ionicons name="checkmark-circle-outline" size={16} color="#0284C7" />
-          <Text style={{ fontFamily: F.m, fontSize: 12, color: '#0284C7' }}>
+          <Ionicons name="checkmark-circle-outline" size={17} color="#2563EB" />
+          <Text style={{ fontFamily: F.m, fontSize: 12, color: '#111111' }}>
             All numbers verified • No duplicates found
           </Text>
         </View>

@@ -34,29 +34,32 @@ export function SaveSummary({
       <View
         style={{
           flex: 1,
-          backgroundColor: '#FFFFFF',
-          justifyContent: 'space-between',
-          paddingTop: Math.max(i.top, 44) + 40,
-          paddingBottom: Math.max(i.bottom, 20) + 16,
+          backgroundColor: '#F5F8FC',
+          alignItems: 'center',
+          justifyContent: 'center',
+          paddingTop: Math.max(i.top, 44),
+          paddingBottom: Math.max(i.bottom, 20),
           paddingHorizontal: 28,
         }}
         testID="save-summary"
       >
-        {/* Center Saved Animation & Status */}
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16 }}>
+        {/* Center Saved Animation, Status & Done */}
+        <View style={{ alignItems: 'center', width: '100%', maxWidth: 320 }}>
           <Animated.View
             entering={ZoomIn.duration(400)}
             style={{
-              width: 88,
-              height: 88,
-              borderRadius: 44,
-              backgroundColor: '#DCFCE7',
+              width: 96,
+              height: 96,
+              borderRadius: 48,
+              backgroundColor: '#D3F5E1',
+              borderWidth: 1,
+              borderColor: '#BDEFD2',
               alignItems: 'center',
               justifyContent: 'center',
-              marginBottom: 8,
+              marginBottom: 20,
             }}
           >
-            <Ionicons name="checkmark" size={44} color="#16A34A" />
+            <Ionicons name="checkmark" size={30} color="#0E9F5B" />
           </Animated.View>
 
           <Animated.Text
@@ -64,10 +67,11 @@ export function SaveSummary({
             accessibilityRole="header"
             style={{
               fontFamily: F.b,
-              fontSize: 24,
-              color: '#0F172A',
-              letterSpacing: -0.5,
+              fontSize: 19,
+              color: '#111111',
+              letterSpacing: -0.3,
               textAlign: 'center',
+              marginBottom: 6,
             }}
           >
             {saving
@@ -82,10 +86,10 @@ export function SaveSummary({
             style={{
               fontFamily: F.r,
               fontSize: 14,
-              color: '#64748B',
+              color: '#1F2937',
               textAlign: 'center',
-              lineHeight: 22,
-              maxWidth: 280,
+              lineHeight: 18,
+              maxWidth: 200,
             }}
           >
             {saving
@@ -94,46 +98,33 @@ export function SaveSummary({
               ? `${savedCount} contacts have been successfully added to your device contacts.`
               : `${contactName} has been successfully added to your device contacts.`}
           </Animated.Text>
-        </View>
 
-        {/* Bottom Black Done Button */}
-        {!saving ? (
-          <Animated.View entering={FadeIn.delay(350).duration(400)}>
-            <PressScale
-              testID="summary-done"
-              accessibilityRole="button"
-              accessibilityLabel="Done"
-              onPress={() => {
-                tap('medium');
-                onDone();
-              }}
-              style={{
-                backgroundColor: '#000000',
-                height: 52,
-                borderRadius: 999,
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: '100%',
-                shadowColor: '#000',
-                shadowOffset: { width: 0, height: 4 },
-                shadowOpacity: 0.15,
-                shadowRadius: 8,
-                elevation: 3,
-              }}
-            >
-              <Text
+          {!saving ? (
+            <Animated.View entering={FadeIn.delay(350).duration(400)} style={{ width: 240, marginTop: 22 }}>
+              <PressScale
+                testID="summary-done"
+                accessibilityRole="button"
+                accessibilityLabel="Done"
+                onPress={() => {
+                  tap('medium');
+                  onDone();
+                }}
                 style={{
-                  fontFamily: F.b,
-                  fontSize: 16,
-                  color: '#FFFFFF',
-                  letterSpacing: -0.2,
+                  backgroundColor: '#000000',
+                  height: 40,
+                  borderRadius: 8,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: '100%',
                 }}
               >
-                Done
-              </Text>
-            </PressScale>
-          </Animated.View>
-        ) : null}
+                <Text style={{ fontFamily: F.m, fontSize: 14, color: '#FFFFFF' }}>
+                  Done
+                </Text>
+              </PressScale>
+            </Animated.View>
+          ) : null}
+        </View>
       </View>
     </Modal>
   );

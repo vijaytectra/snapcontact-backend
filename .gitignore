@@ -50,3 +50,10 @@ Thumbs.db
 /generated-artifacts/
 /artifacts/snapcontact/ios/
 /artifacts/snapcontact/android/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+/artifacts/api-server/data/
+/artifacts/snapcontact/.env

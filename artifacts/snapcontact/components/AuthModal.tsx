@@ -270,7 +270,7 @@ export function AuthModal({
                       1st Week Free Trial Included
                     </Text>
                     <Text style={{ fontFamily: F.r, fontSize: 12, color: '#A1A1AA', lineHeight: 17 }}>
-                      7 days zero-cost access. Auto-renewal at ₹999/year with notice 15 days prior.
+                      7 days zero-cost access. Auto-renewal at ₹99/year with notice 15 days prior.
                     </Text>
                   </View>
                 </View>

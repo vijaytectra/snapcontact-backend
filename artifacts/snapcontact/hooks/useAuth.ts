@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 import {
   UserProfile,
   SubscriptionInfo,
@@ -8,6 +10,7 @@ import {
   isValidEmail,
   storeUser,
 } from '@/lib/auth';
+import { apiFetch } from '@/lib/api';
 import { CashfreePaymentResult } from '@/lib/cashfree';
 
 export function useAuth() {
@@ -17,6 +20,7 @@ export function useAuth() {
   );
   const [isLoading, setIsLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
+  const busyRef = useRef(false);
 
   // Load stored user on mount
   useEffect(() => {
@@ -45,20 +49,115 @@ export function useAuth() {
     ? user.subscription
     : guestSubscription;
 
+  const requestOtp = useCallback(async (email: string): Promise<boolean> => {
+    if (busyRef.current) return false;
+    busyRef.current = true;
+    setAuthError(null);
+    const cleanEmail = email.trim();
+    if (!cleanEmail || !isValidEmail(cleanEmail)) {
+      setAuthError('Please enter a valid email address.');
+      return false;
+    }
+    try {
+      await apiFetch('/auth/request-otp', { method: 'POST', body: JSON.stringify({ email: cleanEmail }) });
+      return true;
+    } catch (e: any) {
+      setAuthError(e?.message || 'Failed to send code');
+      return false;
+    } finally {
+      busyRef.current = false;
+    }
+  }, []);
+
+  const verifyLink = useCallback(async (email: string, token: string): Promise<boolean> => {
+    if (busyRef.current) return false;
+    busyRef.current = true;
+    setAuthError(null);
+    try {
+      const data = await apiFetch(`/auth/verify-link?email=${encodeURIComponent(email)}&token=${token}`);
+      const profile: UserProfile = {
+        id: data.user.id,
+        email: data.user.email,
+        name: data.user.name,
+        createdAt: new Date().toISOString(),
+        subscription: data.user.subscription || createDefaultTrialSubscription(),
+      };
+      await SecureStore.setItemAsync('snapcontact.token.v1', data.token);
+      if (data.refreshToken) await SecureStore.setItemAsync('snapcontact.refresh.v1', data.refreshToken);
+      await storeUser(profile);
+      setUser(profile);
+      return true;
+    } catch (e: any) {
+      setAuthError(e?.message || 'Invalid link');
+      return false;
+    } finally {
+      busyRef.current = false;
+    }
+  }, []);
+
+  const verifyOtp = useCallback(async (email: string, otp: string): Promise<boolean> => {
+    if (busyRef.current) return false;
+    busyRef.current = true;
+    setAuthError(null);
+    const cleanEmail = email.trim();
+    try {
+      const data = await apiFetch('/auth/verify-otp', { method: 'POST', body: JSON.stringify({ email: cleanEmail, otp }) });
+      const profile: UserProfile = {
+        id: data.user.id,
+        email: data.user.email,
+        name: data.user.name,
+        createdAt: new Date().toISOString(),
+        subscription: data.user.subscription || createDefaultTrialSubscription(),
+      };
+      await SecureStore.setItemAsync('snapcontact.token.v1', data.token);
+      if (data.refreshToken) await SecureStore.setItemAsync('snapcontact.refresh.v1', data.refreshToken);
+      await storeUser(profile);
+      setUser(profile);
+      return true;
+    } catch (e: any) {
+      setAuthError(e?.message || 'Invalid code');
+      return false;
+    } finally {
+      busyRef.current = false;
+    }
+  }, []);
+
   const login = useCallback(
     async (email: string, _password?: string): Promise<boolean> => {
+      if (busyRef.current) return false;
+      busyRef.current = true;
       setAuthError(null);
       const cleanEmail = email.trim();
       if (!cleanEmail) {
         setAuthError('Please enter your email address.');
+        busyRef.current = false;
         return false;
       }
       if (!isValidEmail(cleanEmail)) {
         setAuthError('Please enter a valid email address.');
+        busyRef.current = false;
         return false;
       }
 
-      // Existing or new login profile
+      // Try backend auth first
+      try {
+        const data = await apiFetch('/auth/login', { method: 'POST', body: JSON.stringify({ email: cleanEmail, password: _password || '' }) });
+        const profile: UserProfile = {
+          id: data.user.id,
+          email: data.user.email,
+          name: data.user.name,
+          createdAt: new Date().toISOString(),
+          subscription: data.user.subscription || createDefaultTrialSubscription(),
+        };
+        await SecureStore.setItemAsync('snapcontact.token.v1', data.token);
+        if (data.refreshToken) await SecureStore.setItemAsync('snapcontact.refresh.v1', data.refreshToken);
+        await storeUser(profile);
+        setUser(profile);
+        return true;
+      } catch {
+        // fallback to local profile (offline)
+      }
+
       const now = new Date().toISOString();
       const existing = await getStoredUser();
 
@@ -74,6 +173,7 @@ export function useAuth() {
 
       await storeUser(profile);
       setUser(profile);
+      busyRef.current = false;
       return true;
     },
     []
@@ -81,16 +181,37 @@ export function useAuth() {
 
   const signup = useCallback(
     async (email: string, _password?: string, name?: string): Promise<boolean> => {
+      if (busyRef.current) return false;
+      busyRef.current = true;
       setAuthError(null);
       const cleanEmail = email.trim();
       if (!cleanEmail) {
         setAuthError('Please enter your email address.');
+        busyRef.current = false;
         return false;
       }
       if (!isValidEmail(cleanEmail)) {
         setAuthError('Please enter a valid email address.');
+        busyRef.current = false;
         return false;
       }
+
+      try {
+        const data = await apiFetch('/auth/signup', { method: 'POST', body: JSON.stringify({ email: cleanEmail, password: _password || '', name }) });
+        const profile: UserProfile = {
+          id: data.user.id,
+          email: data.user.email,
+          name: data.user.name,
+          createdAt: new Date().toISOString(),
+          subscription: data.user.subscription || createDefaultTrialSubscription(),
+        };
+        await SecureStore.setItemAsync('snapcontact.token.v1', data.token);
+        if (data.refreshToken) await SecureStore.setItemAsync('snapcontact.refresh.v1', data.refreshToken);
+        await storeUser(profile);
+        setUser(profile);
+        busyRef.current = false;
+        return true;
+      } catch {}
 
       const now = new Date().toISOString();
       const profile: UserProfile = {
@@ -103,6 +224,7 @@ export function useAuth() {
 
       await storeUser(profile);
       setUser(profile);
+      busyRef.current = false;
       return true;
     },
     []
@@ -110,6 +232,8 @@ export function useAuth() {
 
   const logout = useCallback(async () => {
     await storeUser(null);
+    await SecureStore.deleteItemAsync('snapcontact.token.v1');
+    await SecureStore.deleteItemAsync('snapcontact.refresh.v1');
     setUser(null);
     setGuestSubscription(createDefaultTrialSubscription());
   }, []);
@@ -123,7 +247,7 @@ export function useAuth() {
       const updatedSub: SubscriptionInfo = {
         status: 'annual',
         planName: 'Annual Pro Membership',
-        price: 999,
+        price: 99,
         currency: 'INR',
         trialStartDate: subscription.trialStartDate,
         trialEndDate: subscription.trialEndDate,
@@ -203,6 +327,19 @@ export function useAuth() {
     }
   }, [user]);
 
+  const refreshSession = useCallback(async (): Promise<boolean> => {
+    try {
+      const rt = await SecureStore.getItemAsync('snapcontact.refresh.v1');
+      if (!rt) return false;
+      const data = await apiFetch('/auth/refresh', { method: 'POST', body: JSON.stringify({ refreshToken: rt }) });
+      await SecureStore.setItemAsync('snapcontact.token.v1', data.token);
+      if (data.refreshToken) await SecureStore.setItemAsync('snapcontact.refresh.v1', data.refreshToken);
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
+
   const clearAuthError = useCallback(() => {
     setAuthError(null);
   }, []);
@@ -214,12 +351,16 @@ export function useAuth() {
     authError,
     login,
     signup,
+    requestOtp,
+    verifyOtp,
+    verifyLink,
     logout,
     activateAnnualSubscription,
     toggleAutoRenewal,
     simulateExpiredTrial,
     resetTrial,
     clearAuthError,
+    refreshSession,
   };
 }
 

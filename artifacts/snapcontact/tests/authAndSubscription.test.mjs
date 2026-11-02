@@ -53,7 +53,7 @@ test('Email validation correctly identifies valid and invalid addresses for Mail
   assert.equal(isValidEmail('@nodomain.com'), false);
 });
 
-test('Cashfree order creation includes INR currency, customer details, and session ID', () => {
+test('Cashfree order creation includes INR currency, customer details, and session ID', async () => {
   const customer = {
     customerId: 'cust_test_123',
     customerEmail: 'test.user@example.com',
@@ -61,9 +61,9 @@ test('Cashfree order creation includes INR currency, customer details, and sessi
     customerPhone: '9876543210',
   };
 
-  const order = createCashfreeOrder(customer, 999);
+  const order = await createCashfreeOrder(customer, 99);
   assert.ok(order.orderId.startsWith('CF_ORDER_'));
-  assert.equal(order.orderAmount, 999);
+  assert.equal(order.orderAmount, 99);
   assert.equal(order.orderCurrency, 'INR');
   assert.equal(order.status, 'ACTIVE');
   assert.ok(order.paymentSessionId.startsWith('session_'));
@@ -79,10 +79,10 @@ test('Cashfree payment channels (UPI, Card, NetBanking) are configured', () => {
 });
 
 test('Cashfree payment processing completes with transaction reference and success status', async () => {
-  const order = createCashfreeOrder({
+  const order = await createCashfreeOrder({
     customerId: 'cust_upi_1',
     customerEmail: 'alex@example.com',
-  }, 999);
+  }, 99);
 
   const result = await processCashfreePayment(order, 'UPI', 'Google Pay');
   assert.equal(result.success, true);
@@ -90,7 +90,7 @@ test('Cashfree payment processing completes with transaction reference and succe
   assert.ok(result.paymentId.startsWith('cf_pay_'));
   assert.ok(result.referenceId.startsWith('cf_ref_'));
   assert.equal(result.paymentMethod, 'UPI');
-  assert.equal(result.amount, 999);
+  assert.equal(result.amount, 99);
   assert.equal(result.currency, 'INR');
 });
 

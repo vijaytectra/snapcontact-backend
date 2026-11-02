@@ -5,7 +5,7 @@ export type SubscriptionTier = 'trial' | 'annual' | 'expired';
 export type SubscriptionInfo = {
   status: SubscriptionTier;
   planName: string;
-  price: number; // 999 INR
+  price: number; // 99 INR
   currency: string; // 'INR'
   trialStartDate: string; // ISO
   trialEndDate: string; // ISO (7 days from start)
@@ -85,7 +85,7 @@ export function calculateSubscriptionState(
   return {
     status,
     planName: 'Annual Pro (7-Day Trial Included)',
-    price: 999,
+    price: 99,
     currency: 'INR',
     trialStartDate: trialStart.toISOString(),
     trialEndDate: trialEnd.toISOString(),

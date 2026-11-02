@@ -17,17 +17,35 @@ import {
   processCashfreePayment,
   CashfreePaymentResult,
 } from '@/lib/cashfree';
+import { detectCardBrand, cardBrandLabel } from '@/lib/cardBrand';
+
+function luhnCheck(num: string): boolean {
+  let sum = 0;
+  let shouldDouble = false;
+  for (let i = num.length - 1; i >= 0; i--) {
+    let digit = parseInt(num[i], 10);
+    if (shouldDouble) {
+      digit *= 2;
+      if (digit > 9) digit -= 9;
+    }
+    sum += digit;
+    shouldDouble = !shouldDouble;
+  }
+  return sum % 10 === 0;
+}
 
 export function CashfreeModal({
   visible,
   onClose,
   customerEmail,
   onSuccess,
+  onFailure,
 }: {
   visible: boolean;
   onClose: () => void;
   customerEmail?: string;
   onSuccess: (result: CashfreePaymentResult) => void;
+  onFailure?: (error: string) => void;
 }) {
   const c = useColors();
   const i = useInsets();
@@ -46,14 +64,60 @@ export function CashfreeModal({
 
   const handlePay = async () => {
     tap('medium');
+
+    // Input validation
+    if (method === 'card') {
+      const cleanNum = cardNumber.replace(/\\s+/g, '');
+      if (cleanNum.length < 13 || cleanNum.length > 19) {
+        alert('Please enter a valid card number.');
+        return;
+      }
+      if (!luhnCheck(cleanNum)) {
+        alert('Invalid card number.');
+        return;
+      }
+      if (!/^\d{2}\/\d{2}$/.test(cardExpiry)) {
+        alert('Enter expiry as MM/YY.');
+        return;
+      }
+      const [mm, yy] = cardExpiry.split('/').map(Number);
+      if (mm < 1 || mm > 12) {
+        alert('Invalid expiry month.');
+        return;
+      }
+      const now = new Date();
+      const expDate = new Date(2000 + yy, mm - 1, 1);
+      if (expDate < new Date(now.getFullYear(), now.getMonth(), 1)) {
+        alert('Card has expired.');
+        return;
+      }
+      if (cardCvv.length < 3 || cardCvv.length > 4) {
+        alert('Enter a valid CVV.');
+        return;
+      }
+    }
+    if (method === 'upi' && selectedUpiApp === 'custom') {
+      if (!upiId.trim() || !upiId.includes('@')) {
+        alert('Enter a valid UPI ID (e.g. name@upi).');
+        return;
+      }
+    }
+
     setProcessing(true);
 
-    const order = createCashfreeOrder({
-      customerId: `cust_${Date.now()}`,
-      customerEmail: emailToUse,
-      customerName: emailToUse.split('@')[0],
-      customerPhone: '9876543210',
-    });
+    let order;
+    try {
+      order = await createCashfreeOrder({
+        customerId: `cust_${Date.now()}`,
+        customerEmail: emailToUse,
+        customerName: emailToUse.split('@')[0],
+        customerPhone: '9876543210',
+      });
+    } catch (e: any) {
+      setProcessing(false);
+      onFailure?.(e?.message || 'Unable to create payment order.');
+      return;
+    }
 
     let details = '';
     let methodType: 'UPI' | 'CARD' | 'NETBANKING' = 'UPI';
@@ -75,8 +139,9 @@ export function CashfreeModal({
       const result = await processCashfreePayment(order, methodType, details);
       setReceipt(result);
       onSuccess(result);
-    } catch {
+    } catch (e: any) {
       setProcessing(false);
+      onFailure?.(e?.message || 'Payment failed');
     } finally {
       setProcessing(false);
     }
@@ -212,7 +277,7 @@ export function CashfreeModal({
                   </View>
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
                     <Text style={{ fontFamily: F.r, fontSize: 13, color: '#71717A' }}>Annual Price</Text>
-                    <Text style={{ fontFamily: F.s, fontSize: 13, color: c.foreground }}>₹999 / year</Text>
+                    <Text style={{ fontFamily: F.s, fontSize: 13, color: c.foreground }}>₹99 / year</Text>
                   </View>
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
                     <Text style={{ fontFamily: F.r, fontSize: 13, color: '#71717A' }}>Auto-Renewal Notice</Text>
@@ -270,7 +335,7 @@ export function CashfreeModal({
                         ₹0.00
                       </Text>
                       <Text style={{ fontFamily: F.r, fontSize: 11, color: '#71717A', textDecorationLine: 'line-through' }}>
-                        ₹999/yr
+                        ₹99/yr
                       </Text>
                     </View>
                   </View>
@@ -293,7 +358,7 @@ export function CashfreeModal({
                       </Text>
                     </View>
                     <Text style={{ fontFamily: F.r, fontSize: 12, color: c.mutedForeground, lineHeight: 18 }}>
-                      Your first 7 days are completely free. The annual plan (₹999) activates after 7 days. Auto-renewal is notified and processed 15 days before the 1-year mark. You can cancel anytime before this window.
+                      Your first 7 days are completely free. The annual plan (₹99) activates after 7 days. Auto-renewal is notified and processed 15 days before the 1-year mark. You can cancel anytime before this window.
                     </Text>
                   </View>
                 </View>
@@ -430,6 +495,11 @@ export function CashfreeModal({
                           color: c.foreground,
                         }}
                       />
+                      {cardNumber.replace(/\\s+/g, '').length >= 4 && (
+                        <Text style={{ marginTop: 6, fontSize: 12, color: c.muted, fontFamily: F.m }}>
+                          {cardBrandLabel(detectCardBrand(cardNumber))}
+                        </Text>
+                      )}
                     </View>
                   </View>
                 ) : method === 'card' ? (
@@ -458,6 +528,11 @@ export function CashfreeModal({
                           color: c.foreground,
                         }}
                       />
+                      {cardNumber.replace(/\\s+/g, '').length >= 4 && (
+                        <Text style={{ marginTop: 6, fontSize: 12, color: c.muted, fontFamily: F.m }}>
+                          {cardBrandLabel(detectCardBrand(cardNumber))}
+                        </Text>
+                      )}
                     </View>
 
                     <View style={{ flexDirection: 'row', gap: 10 }}>
