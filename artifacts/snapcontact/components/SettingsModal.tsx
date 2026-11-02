@@ -25,6 +25,7 @@ export function SettingsModal({
   subscription,
   onOpenAuth,
   onOpenSubscription,
+  onResetOnboarding,
 }: {
   visible: boolean;
   onClose: () => void;
@@ -33,6 +34,7 @@ export function SettingsModal({
   subscription?: SubscriptionInfo;
   onOpenAuth?: () => void;
   onOpenSubscription?: () => void;
+  onResetOnboarding?: () => void;
 }) {
   const c = useColors();
   const i = useInsets();
@@ -225,7 +227,19 @@ export function SettingsModal({
               );
             })}
 
-            <View style={{ marginTop: 8 }}>
+            <View style={{ marginTop: 8, gap: 10 }}>
+              {onResetOnboarding ? (
+                <Button
+                  testID="open-onboarding-btn"
+                  label="View Get Started Screen"
+                  icon="sparkles-outline"
+                  variant="primary"
+                  onPress={() => {
+                    onClose();
+                    onResetOnboarding();
+                  }}
+                />
+              ) : null}
               <Button
                 testID="open-system-settings"
                 label={S.settings.open}

@@ -175,8 +175,17 @@ export default function Index() {
                 marginBottom: 20,
               }}
             >
-              {/* Logo & App Name */}
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              {/* Logo & App Name - Tap to return to Get Started page */}
+              <PressScale
+                testID="logo-to-onboarding"
+                accessibilityRole="button"
+                accessibilityLabel="Go to Get Started page"
+                onPress={() => {
+                  tap();
+                  cap.resetOnboarding();
+                }}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}
+              >
                 <View
                   style={{
                     width: 34,
@@ -204,10 +213,37 @@ export default function Index() {
                 >
                   SnapContact
                 </Text>
-              </View>
+              </PressScale>
 
-              {/* Header Right Action Pills: Mail Login + Country */}
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              {/* Header Right Action Pills: Intro + Mail Login + Country */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                {/* Intro / Get Started Pill */}
+                <PressScale
+                  testID="header-intro-btn"
+                  accessibilityRole="button"
+                  accessibilityLabel="View Get Started page"
+                  onPress={() => {
+                    tap();
+                    cap.resetOnboarding();
+                  }}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 4,
+                    paddingHorizontal: 10,
+                    paddingVertical: 7,
+                    borderRadius: 999,
+                    backgroundColor: 'rgba(255, 255, 255, 0.14)',
+                    borderWidth: 1,
+                    borderColor: 'rgba(255, 255, 255, 0.25)',
+                  }}
+                >
+                  <Ionicons name="sparkles-outline" size={13} color="#FFFFFF" />
+                  <Text style={{ fontFamily: F.s, fontSize: 12, color: '#FFFFFF' }}>
+                    Intro
+                  </Text>
+                </PressScale>
+
                 {/* Mail Login Pill */}
                 <PressScale
                   testID="header-auth-btn"
@@ -673,6 +709,7 @@ export default function Index() {
           subscription={auth.subscription}
           onOpenAuth={() => setAuthOpen(true)}
           onOpenSubscription={() => setSubscriptionOpen(true)}
+          onResetOnboarding={cap.resetOnboarding}
         />
         <AuthModal
           visible={authOpen}
@@ -1209,6 +1246,7 @@ export default function Index() {
         subscription={auth.subscription}
         onOpenAuth={() => setAuthOpen(true)}
         onOpenSubscription={() => setSubscriptionOpen(true)}
+        onResetOnboarding={cap.resetOnboarding}
       />
       <AuthModal
         visible={authOpen}

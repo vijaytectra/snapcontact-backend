@@ -71,7 +71,8 @@ export function useCapture() {
       if (!live || !value) return;
       const saved = JSON.parse(value);
       if (getCountries().includes(saved.country)) { setCountryState(saved.country); countryRef.current = saved.country; }
-      setOnboarded(saved.onboarded === true);
+      // Always show Get Started screen on startup/refresh
+      setOnboarded(false);
     }).catch(() => { if (live) setError(R.preferenceRead); })
       .finally(() => { if (live) setReady(true); });
     return () => { live = false; generation.current++; };
@@ -341,11 +342,15 @@ export function useCapture() {
       await Linking.openSettings();
     } catch { setError(R.settingsFailed); }
   };
+  const resetOnboarding = useCallback(() => {
+    setOnboarded(false);
+  }, []);
+
   return {
     ready, onboarded, country, countries, imageUri, text, candidates, phase, error, notice, outcomes,
     nativeAvailable: device.nativeAvailable, ocrAvailable: device.ocrAvailable, ocrProgress,
     quickCaptureAvailable: device.quickCaptureAvailable, quickCaptureActive, toggleQuickCapture,
-    completeOnboarding, setCountry, importImage, processText,
+    completeOnboarding, resetOnboarding, setCountry, importImage, processText,
     setText, updateCandidate, selectAll, saveSelected, clear, action, openSettings,
     retry: async () => { if (imageRef.current && !busy.current) await processImage(imageRef.current); },
     dismissError: () => { setError(null); },
