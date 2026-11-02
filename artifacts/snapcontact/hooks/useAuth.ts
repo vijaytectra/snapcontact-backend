@@ -232,8 +232,9 @@ export function useAuth() {
 
   const logout = useCallback(async () => {
     await storeUser(null);
-    await SecureStore.deleteItemAsync('snapcontact.token.v1');
-    await SecureStore.deleteItemAsync('snapcontact.refresh.v1');
+    // SecureStore is unavailable on web; a failed token delete must not leave the user signed in.
+    await SecureStore.deleteItemAsync('snapcontact.token.v1').catch(() => {});
+    await SecureStore.deleteItemAsync('snapcontact.refresh.v1').catch(() => {});
     setUser(null);
     setGuestSubscription(createDefaultTrialSubscription());
   }, []);

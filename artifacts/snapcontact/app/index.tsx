@@ -585,6 +585,40 @@ export default function Index() {
                 Privacy and help
               </Text>
             </PressScale>
+
+            {/* Log out: clears the stored session and returns to the Get Started screen */}
+            {auth.user ? (
+              <View style={{ alignItems: 'center', gap: 8, marginTop: 4 }}>
+                <Text style={{ fontFamily: F.r, fontSize: 12, color: '#64748B' }}>
+                  Signed in as {auth.user.email}
+                </Text>
+                <PressScale
+                  testID="logout"
+                  accessibilityRole="button"
+                  accessibilityLabel="Log out"
+                  onPress={async () => {
+                    tap('medium');
+                    await auth.logout();
+                    setOnboardingStep('intro');
+                    cap.resetOnboarding();
+                  }}
+                  style={{
+                    height: 44,
+                    paddingHorizontal: 28,
+                    borderRadius: 999,
+                    borderWidth: 1,
+                    borderColor: '#DC2626',
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 6,
+                  }}
+                >
+                  <Ionicons name="log-out-outline" size={16} color="#DC2626" />
+                  <Text style={{ fontFamily: F.m, fontSize: 14, color: '#DC2626' }}>Log out</Text>
+                </PressScale>
+              </View>
+            ) : null}
           </LinearGradient>
         </KeyboardAwareScrollViewCompat>
 
