@@ -1,18 +1,31 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { FlatList, Image, Keyboard, Platform, Pressable, Text, TextInput, View, useWindowDimensions } from 'react-native';
+import {
+  FlatList,
+  Image,
+  Keyboard,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  Text,
+  TextInput,
+  View,
+  useWindowDimensions,
+} from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { StatusBar } from 'expo-status-bar';
 import { useCapture } from '@/hooks/useCapture';
-import { useColors } from '@/hooks/useColors';
 import { S } from '@/lib/strings';
 import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
-import { Banner, Button, F, IconButton, PressScale, Skeleton, tap, useInsets } from '@/components/ui';
+import { Banner, Button, F, PressScale, Skeleton, tap, useInsets } from '@/components/ui';
 import { Onboarding } from '@/components/Onboarding';
 import { CountrySheet } from '@/components/CountrySheet';
 import { SettingsModal } from '@/components/SettingsModal';
 import { SaveSummary } from '@/components/SaveSummary';
 import { CandidateCard } from '@/components/CandidateCard';
+import { ContactsListView } from '@/components/ContactsListView';
 import { AuthModal } from '@/components/AuthModal';
 import { SubscriptionModal } from '@/components/SubscriptionModal';
 import { CashfreeModal } from '@/components/CashfreeModal';
@@ -21,18 +34,26 @@ import { useAuth } from '@/hooks/useAuth';
 export default function Index() {
   const cap = useCapture();
   const auth = useAuth();
-  const c = useColors();
   const i = useInsets();
   const { width: windowWidth } = useWindowDimensions();
   const cardWidth = Math.min(windowWidth - 40, 480);
+
   const [countryOpen, setCountryOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
   const [subscriptionOpen, setSubscriptionOpen] = useState(false);
   const [cashfreeOpen, setCashfreeOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [rawOpen, setRawOpen] = useState(false);
   const [dismissed, setDismissed] = useState<unknown>(null);
   const [currentCardIndex, setCurrentCardIndex] = useState(0);
+  const [viewMode, setViewMode] = useState<'card' | 'list'>('card');
+  const [searchHistory, setSearchHistory] = useState<string[]>([
+    'Vignesh 9876543210',
+    'Arjun Kumar +91 98765 43210',
+    'Priya Sharma +91 91234 56789',
+  ]);
+
   const flatListRef = useRef<FlatList>(null);
 
   useEffect(() => {
@@ -57,13 +78,35 @@ export default function Index() {
 
   if (!cap.ready) {
     return (
-      <View style={{ flex: 1, backgroundColor: c.background, padding: 24, paddingTop: i.top + 24, gap: 16 }} testID="loading">
-        <Skeleton h={40} w={180} /><Skeleton h={120} /><Skeleton h={120} />
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: '#091838',
+          padding: 24,
+          paddingTop: i.top + 24,
+          gap: 16,
+        }}
+        testID="loading"
+      >
+        <Skeleton h={40} w={180} />
+        <Skeleton h={120} />
+        <Skeleton h={120} />
       </View>
     );
   }
+
+  // Screen 1: Onboarding
   if (!cap.onboarded && cap.phase === 'idle' && cap.candidates.length === 0) {
-    return (<><StatusBar style="light" /><Onboarding onDone={() => { cap.completeOnboarding(); }} /></>);
+    return (
+      <>
+        <StatusBar style="light" />
+        <Onboarding
+          onDone={() => {
+            cap.completeOnboarding();
+          }}
+        />
+      </>
+    );
   }
 
   const countryName = cap.countries.find((o) => o.code === cap.country);
@@ -72,647 +115,1035 @@ export default function Index() {
   const nativeOcrUnavailable = !!cap.imageUri && !cap.ocrAvailable;
   const selected = cap.candidates.filter((x) => x.selected);
   const canSave = selected.length > 0 && selected.every((x) => x.valid) && cap.nativeAvailable && !saving;
-  // Never present a React Native Modal over the OS contact editor. It competes
-  // for iOS presentation and can hide the editor or break delegate completion.
   const showSummary = !saving && cap.outcomes.length > 0 && dismissed !== cap.outcomes;
   const allSelected = cap.candidates.length > 0 && cap.candidates.every((x) => x.selected);
-  const detectedCountries = [...new Map(cap.candidates
-    .filter(row => row.international && row.callingCode)
-    .map(row => [row.country || `calling-${row.callingCode}`, {
-      name: row.countryName, code: row.callingCode,
-    }])).values()];
-
-  const countryChip = (
-    <PressScale testID="country-chip" accessibilityRole="button" accessibilityLabel={`${S.home.country}: ${countryName?.name ?? cap.country}. ${S.home.countryHint}`}
-      onPress={() => { tap(); setCountryOpen(true); }}
-      style={{ minHeight: 52, borderRadius: 16, backgroundColor: c.card, borderWidth: 1, borderColor: c.border, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-      <View style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: c.secondary, borderWidth: 1, borderColor: c.border, alignItems: 'center', justifyContent: 'center' }}>
-        <Ionicons name="globe-outline" size={18} color="#FFFFFF" />
-      </View>
-      <View style={{ flex: 1 }}>
-        <Text style={{ fontFamily: F.m, fontSize: 11, letterSpacing: 0.6, textTransform: 'uppercase', color: '#71717A' }}>{S.home.country}</Text>
-        <Text style={{ fontFamily: F.s, fontSize: 15, color: c.foreground }}>{countryName ? `${countryName.name}  ${countryName.callingCode.startsWith('+') ? '' : '+'}${countryName.callingCode}` : cap.country}</Text>
-      </View>
-      <Ionicons name="chevron-down" size={18} color="#A1A1AA" />
-    </PressScale>
-  );
 
   const messages = (
     <>
-      {cap.error ? <Banner testID="error-banner" kind="error" text={cap.error} onDismiss={cap.dismissError} action={cap.imageUri && cap.ocrAvailable ? { label: S.review.retry, onPress: () => { cap.retry(); } } : undefined} /> : null}
+      {cap.error ? (
+        <Banner
+          testID="error-banner"
+          kind="error"
+          text={cap.error}
+          onDismiss={cap.dismissError}
+          action={
+            cap.imageUri && cap.ocrAvailable
+              ? {
+                  label: S.review.retry,
+                  onPress: () => {
+                    cap.retry();
+                  },
+                }
+              : undefined
+          }
+        />
+      ) : null}
       {cap.notice ? <Banner testID="notice-banner" kind="notice" text={cap.notice} /> : null}
     </>
   );
 
-  const header = (
-    <View style={{ gap: 12, marginTop: 8, marginBottom: 14 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-          <View style={{ width: 42, height: 42, borderRadius: 13, backgroundColor: c.card, borderWidth: 1, borderColor: c.border, alignItems: 'center', justifyContent: 'center' }}>
-            <Ionicons name="scan-outline" size={23} color="#FFFFFF" />
-          </View>
-          <View style={{ gap: 1 }}>
-            <Text accessibilityRole="header" style={{ fontFamily: F.b, fontSize: 21, color: c.foreground, letterSpacing: -0.5 }}>{S.appName}</Text>
-            <Text style={{ fontFamily: F.r, fontSize: 12, color: '#A1A1AA' }}>100% on-device capture</Text>
-          </View>
-        </View>
-
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          {/* Mail Login / Account Button */}
-          <PressScale
-            testID="header-auth-btn"
-            accessibilityRole="button"
-            accessibilityLabel={auth.user ? `Account: ${auth.user.email}` : 'Sign in with email'}
-            onPress={() => { tap(); setAuthOpen(true); }}
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 6,
-              paddingHorizontal: 12,
-              paddingVertical: 8,
-              borderRadius: 999,
-              backgroundColor: auth.user ? '#FFFFFF' : c.secondary,
-              borderWidth: 1,
-              borderColor: auth.user ? '#FFFFFF' : c.border,
-            }}
-          >
-            <Ionicons
-              name={auth.user ? 'person-circle' : 'mail-outline'}
-              size={15}
-              color={auth.user ? '#080809' : '#FFFFFF'}
-            />
-            <Text
-              numberOfLines={1}
-              style={{
-                fontFamily: F.s,
-                fontSize: 12,
-                color: auth.user ? '#080809' : c.foreground,
-                maxWidth: 100,
-              }}
-            >
-              {auth.user ? auth.user.email.split('@')[0] : 'Mail Login'}
-            </Text>
-          </PressScale>
-
-          {/* Compact Default Country Selector at Top Right */}
-          <PressScale
-            testID="country-chip"
-            accessibilityRole="button"
-            accessibilityLabel={`${S.home.country}: ${countryName?.name ?? cap.country}. ${S.home.countryHint}`}
-            onPress={() => { tap(); setCountryOpen(true); }}
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 6,
-              paddingHorizontal: 11,
-              paddingVertical: 8,
-              borderRadius: 999,
-              backgroundColor: c.secondary,
-              borderWidth: 1,
-              borderColor: c.border,
-            }}
-          >
-            <Ionicons name="globe-outline" size={14} color="#FFFFFF" />
-            <Text style={{ fontFamily: F.s, fontSize: 12, color: c.foreground }}>
-              {countryName ? `${countryName.code} +${countryName.callingCode.replace('+', '')}` : cap.country}
-            </Text>
-            <Ionicons name="chevron-down" size={12} color="#A1A1AA" />
-          </PressScale>
-        </View>
-      </View>
-
-      {/* 1st One-Week Trial & 15-Day Auto-Renewal Cashfree Banner */}
-      <PressScale
-        testID="trial-banner"
-        accessibilityRole="button"
-        accessibilityLabel="View subscription and 1-week free trial"
-        onPress={() => { tap(); setSubscriptionOpen(true); }}
-        style={{
-          backgroundColor: c.card,
-          borderWidth: 1,
-          borderColor: auth.subscription.status === 'annual' ? '#FFFFFF' : c.border,
-          borderRadius: 16,
-          padding: 13,
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: 12,
-        }}
-      >
-        <View
-          style={{
-            width: 36,
-            height: 36,
-            borderRadius: 11,
-            backgroundColor: auth.subscription.status === 'annual' ? '#FFFFFF' : c.secondary,
-            borderWidth: 1,
-            borderColor: c.border,
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
+  // -------------------------------------------------------------
+  // SCREEN 2 — HOME SCREEN (When not reviewing contacts)
+  // -------------------------------------------------------------
+  if (!reviewing) {
+    return (
+      <View style={{ flex: 1, backgroundColor: '#091838' }}>
+        <StatusBar style="light" />
+        <KeyboardAwareScrollViewCompat
+          testID="main-scroll"
+          bottomOffset={24}
+          contentContainerStyle={{ flexGrow: 1 }}
+          showsVerticalScrollIndicator={false}
         >
-          <Ionicons
-            name={auth.subscription.status === 'annual' ? 'shield-checkmark' : 'sparkles'}
-            size={18}
-            color={auth.subscription.status === 'annual' ? '#080809' : '#FFFFFF'}
-          />
-        </View>
-        <View style={{ flex: 1, gap: 2 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <Text style={{ fontFamily: F.b, fontSize: 13, color: c.foreground }}>
-              {auth.subscription.status === 'annual'
-                ? 'Annual Pro Member'
-                : `1st Week Free Trial (${auth.subscription.trialDaysRemaining}d left)`}
-            </Text>
+          {/* Top Royal Blue Hero Section */}
+          <LinearGradient
+            colors={['#1F4A89', '#143368', '#0D2249', '#091838']}
+            start={{ x: 0.1, y: 0 }}
+            end={{ x: 0.9, y: 1 }}
+            style={{
+              paddingTop: Math.max(i.top, 44) + 12,
+              paddingHorizontal: 22,
+              paddingBottom: 28,
+            }}
+          >
+            {/* Top Bar: Brand, Mail Login, and Country */}
             <View
               style={{
-                backgroundColor: 'rgba(255, 255, 255, 0.08)',
-                paddingHorizontal: 6,
-                paddingVertical: 1,
-                borderRadius: 999,
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: 20,
               }}
             >
-              <Text style={{ fontFamily: F.b, fontSize: 9, color: '#FFFFFF', letterSpacing: 0.5 }}>
-                CASHFREE
-              </Text>
-            </View>
-          </View>
-          <Text style={{ fontFamily: F.r, fontSize: 11, color: c.mutedForeground, lineHeight: 16 }}>
-            {auth.subscription.status === 'annual'
-              ? `Auto-renews with 15-day notice · Cashfree ref: ${auth.subscription.cashfreePaymentId?.substring(0, 14) || 'active'}`
-              : 'Auto-renewal before 15 days in 1 year · Cancel anytime'}
-          </Text>
-        </View>
-        <Ionicons name="chevron-forward" size={16} color="#71717A" />
-      </PressScale>
-    </View>
-  );
+              {/* Logo & App Name */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <View
+                  style={{
+                    width: 34,
+                    height: 34,
+                    borderRadius: 9,
+                    backgroundColor: '#FFFFFF',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    shadowColor: '#000',
+                    shadowOffset: { width: 0, height: 2 },
+                    shadowOpacity: 0.15,
+                    shadowRadius: 4,
+                  }}
+                >
+                  <Ionicons name="scan-outline" size={20} color="#080809" />
+                </View>
+                <Text
+                  accessibilityRole="header"
+                  style={{
+                    fontFamily: F.b,
+                    fontSize: 22,
+                    color: '#FFFFFF',
+                    letterSpacing: -0.5,
+                  }}
+                >
+                  SnapContact
+                </Text>
+              </View>
 
-  const body = !reviewing ? (
-    <>
-      {header}
-      <Animated.View entering={FadeInDown.duration(450)} style={{ gap: 8, marginTop: 4, marginBottom: 14 }}>
-        <Text style={{ fontFamily: F.b, fontSize: 38, lineHeight: 44, letterSpacing: -1.3, color: c.foreground }}>
-          {S.tagline}
-        </Text>
-        <Text style={{ fontFamily: F.r, fontSize: 15, lineHeight: 22, color: '#A1A1AA' }}>
-          Instantly convert screenshots, business cards, and storefront signs into saved contacts.
-        </Text>
-      </Animated.View>
-      {messages}
+              {/* Header Right Action Pills: Mail Login + Country */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                {/* Mail Login Pill */}
+                <PressScale
+                  testID="header-auth-btn"
+                  accessibilityRole="button"
+                  accessibilityLabel={auth.user ? `Account: ${auth.user.email}` : 'Sign in with email'}
+                  onPress={() => {
+                    tap();
+                    setAuthOpen(true);
+                  }}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 5,
+                    paddingHorizontal: 12,
+                    paddingVertical: 7,
+                    borderRadius: 999,
+                    backgroundColor: auth.user ? '#FFFFFF' : 'rgba(255, 255, 255, 0.14)',
+                    borderWidth: 1,
+                    borderColor: 'rgba(255, 255, 255, 0.25)',
+                  }}
+                >
+                  <Ionicons
+                    name={auth.user ? 'person-circle' : 'mail-outline'}
+                    size={14}
+                    color={auth.user ? '#080809' : '#FFFFFF'}
+                  />
+                  <Text
+                    numberOfLines={1}
+                    style={{
+                      fontFamily: F.s,
+                      fontSize: 12,
+                      color: auth.user ? '#080809' : '#FFFFFF',
+                      maxWidth: 90,
+                    }}
+                  >
+                    {auth.user ? auth.user.email.split('@')[0] : 'Mail Login'}
+                  </Text>
+                </PressScale>
 
-      {/* Main Actions Group */}
-      <Animated.View entering={FadeInDown.delay(100).duration(450)} style={{ gap: 12 }}>
-        {/* Large Beautiful Import Card */}
-        <PressScale
-          testID="import-library"
-          accessibilityRole="button"
-          accessibilityLabel={S.home.library}
-          accessibilityHint={S.home.libraryHint}
-          onPress={() => { tap('medium'); cap.importImage('library'); }}
-          style={{
-            backgroundColor: '#FFFFFF',
-            borderRadius: 22,
-            padding: 24,
-            minHeight: 128,
-            justifyContent: 'space-between',
-          }}
-        >
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-            <View style={{ width: 46, height: 46, borderRadius: 14, backgroundColor: '#080809', alignItems: 'center', justifyContent: 'center' }}>
-              <Ionicons name="images" size={24} color="#FFFFFF" />
-            </View>
-            <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: '#F0F0F2', alignItems: 'center', justifyContent: 'center' }}>
-              <Ionicons name="arrow-forward" size={18} color="#080809" />
-            </View>
-          </View>
-          <View style={{ gap: 4, marginTop: 14 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Text style={{ fontFamily: F.b, fontSize: 21, color: '#080809', letterSpacing: -0.4 }}>{S.home.library}</Text>
-              <View style={{ backgroundColor: '#080809', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999 }}>
-                <Text style={{ fontFamily: F.b, fontSize: 10, color: '#FFFFFF', letterSpacing: 0.5 }}>LOCAL OCR</Text>
+                {/* Country Pill */}
+                <PressScale
+                  testID="country-chip"
+                  accessibilityRole="button"
+                  accessibilityLabel={`${S.home.country}: ${countryName?.name ?? cap.country}`}
+                  onPress={() => {
+                    tap();
+                    setCountryOpen(true);
+                  }}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 5,
+                    paddingHorizontal: 11,
+                    paddingVertical: 7,
+                    borderRadius: 999,
+                    backgroundColor: 'rgba(255, 255, 255, 0.14)',
+                    borderWidth: 1,
+                    borderColor: 'rgba(255, 255, 255, 0.25)',
+                  }}
+                >
+                  <Ionicons name="globe-outline" size={13} color="#FFFFFF" />
+                  <Text style={{ fontFamily: F.s, fontSize: 12, color: '#FFFFFF' }}>
+                    {countryName ? `${countryName.code} +${countryName.callingCode.replace('+', '')}` : cap.country}
+                  </Text>
+                  <Ionicons name="chevron-down" size={12} color="#CBD5E1" />
+                </PressScale>
               </View>
             </View>
-            <Text style={{ fontFamily: F.r, fontSize: 14, color: '#3A3A40', lineHeight: 20 }}>{S.home.libraryHint}</Text>
-          </View>
-        </PressScale>
 
-        {/* Secondary Action: Take a Photo */}
-        <PressScale
-          testID="import-camera"
-          accessibilityRole="button"
-          accessibilityLabel={S.home.camera}
-          accessibilityHint={S.home.cameraHint}
-          onPress={() => { tap('medium'); cap.importImage('camera'); }}
-          style={{
-            backgroundColor: c.card,
-            borderWidth: 1,
-            borderColor: c.border,
-            borderRadius: 20,
-            padding: 18,
-            minHeight: 76,
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: 14,
-          }}
-        >
-          <View style={{ width: 44, height: 44, borderRadius: 13, backgroundColor: c.secondary, borderWidth: 1, borderColor: c.border, alignItems: 'center', justifyContent: 'center' }}>
-            <Ionicons name="camera-outline" size={23} color="#FFFFFF" />
-          </View>
-          <View style={{ flex: 1, gap: 2 }}>
-            <Text style={{ fontFamily: F.s, fontSize: 16, color: c.foreground }}>{S.home.camera}</Text>
-            <Text style={{ fontFamily: F.r, fontSize: 13, color: c.mutedForeground }}>{S.home.cameraHint}</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={18} color="#71717A" />
-        </PressScale>
+            {/* Trial & Cashfree Banner */}
+            <PressScale
+              testID="trial-banner"
+              accessibilityRole="button"
+              accessibilityLabel="View subscription and 1-week free trial"
+              onPress={() => {
+                tap();
+                setSubscriptionOpen(true);
+              }}
+              style={{
+                backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                borderWidth: 1,
+                borderColor: 'rgba(255, 255, 255, 0.18)',
+                borderRadius: 14,
+                padding: 10,
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 10,
+                marginBottom: 18,
+              }}
+            >
+              <View
+                style={{
+                  width: 30,
+                  height: 30,
+                  borderRadius: 8,
+                  backgroundColor: '#FFFFFF',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Ionicons name="sparkles" size={15} color="#080809" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontFamily: F.b, fontSize: 12, color: '#FFFFFF' }}>
+                  {auth.subscription.status === 'annual'
+                    ? 'Annual Pro Member · Cashfree Verified'
+                    : `1st Week Free Trial (${auth.subscription.trialDaysRemaining}d left) · CASHFREE`}
+                </Text>
+                <Text style={{ fontFamily: F.r, fontSize: 11, color: '#CBD5E1' }}>
+                  Auto-renews with 15-day notice · Cancel anytime
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={14} color="#CBD5E1" />
+            </PressScale>
 
-        {/* Quick Capture (Android) */}
-        {cap.quickCaptureAvailable ? (
-          <PressScale
-            testID="toggle-quick-capture"
-            accessibilityRole="button"
-            accessibilityLabel={S.home.quickCapture}
-            accessibilityHint={S.home.quickCaptureHint}
-            onPress={() => { tap('medium'); void cap.toggleQuickCapture(); }}
+            {/* Hero Headline: Your Screenshots Organized */}
+            <Animated.View entering={FadeInDown.duration(400)}>
+              <Text
+                style={{
+                  fontFamily: F.b,
+                  fontSize: 32,
+                  lineHeight: 38,
+                  letterSpacing: -1,
+                  marginBottom: 8,
+                }}
+              >
+                <Text style={{ color: '#FFFFFF' }}>Your </Text>
+                <Text style={{ color: '#38BDF8' }}>Screenshots{'\n'}</Text>
+                <Text style={{ color: '#FFFFFF' }}>Organized</Text>
+              </Text>
+              <Text
+                style={{
+                  fontFamily: F.r,
+                  fontSize: 15,
+                  color: '#CBD5E1',
+                  lineHeight: 21,
+                  marginBottom: 24,
+                }}
+              >
+                Turn saved numbers into contacts automatically.
+              </Text>
+            </Animated.View>
+
+            {/* 3 Circular Action Buttons in Horizontal Row */}
+            <Animated.View
+              entering={FadeInDown.delay(100).duration(450)}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-around',
+                paddingVertical: 4,
+              }}
+            >
+              {/* Action 1: Import Photo */}
+              <View style={{ alignItems: 'center', gap: 8 }}>
+                <PressScale
+                  testID="import-library"
+                  accessibilityRole="button"
+                  accessibilityLabel="Import Photo"
+                  onPress={() => {
+                    tap('medium');
+                    cap.importImage('library');
+                  }}
+                  style={{
+                    width: 62,
+                    height: 62,
+                    borderRadius: 31,
+                    backgroundColor: '#FFFFFF',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    shadowColor: '#000',
+                    shadowOffset: { width: 0, height: 4 },
+                    shadowOpacity: 0.2,
+                    shadowRadius: 8,
+                    elevation: 4,
+                  }}
+                >
+                  <Ionicons name="images-outline" size={26} color="#080809" />
+                </PressScale>
+                <Text style={{ fontFamily: F.m, fontSize: 12, color: '#FFFFFF' }}>
+                  Import Photo
+                </Text>
+              </View>
+
+              {/* Action 2: Camera */}
+              <View style={{ alignItems: 'center', gap: 8 }}>
+                <PressScale
+                  testID="import-camera"
+                  accessibilityRole="button"
+                  accessibilityLabel="Camera"
+                  onPress={() => {
+                    tap('medium');
+                    cap.importImage('camera');
+                  }}
+                  style={{
+                    width: 62,
+                    height: 62,
+                    borderRadius: 31,
+                    backgroundColor: '#FFFFFF',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    shadowColor: '#000',
+                    shadowOffset: { width: 0, height: 4 },
+                    shadowOpacity: 0.2,
+                    shadowRadius: 8,
+                    elevation: 4,
+                  }}
+                >
+                  <Ionicons name="camera-outline" size={26} color="#080809" />
+                </PressScale>
+                <Text style={{ fontFamily: F.m, fontSize: 12, color: '#FFFFFF' }}>
+                  Camera
+                </Text>
+              </View>
+
+              {/* Action 3: Quick Capture */}
+              <View style={{ alignItems: 'center', gap: 8 }}>
+                <PressScale
+                  testID="toggle-quick-capture"
+                  accessibilityRole="button"
+                  accessibilityLabel="Quick Capture"
+                  onPress={() => {
+                    tap('medium');
+                    void cap.toggleQuickCapture();
+                  }}
+                  style={{
+                    width: 62,
+                    height: 62,
+                    borderRadius: 31,
+                    backgroundColor: '#FFFFFF',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    shadowColor: '#000',
+                    shadowOffset: { width: 0, height: 4 },
+                    shadowOpacity: 0.2,
+                    shadowRadius: 8,
+                    elevation: 4,
+                  }}
+                >
+                  <Ionicons name="layers-outline" size={26} color="#080809" />
+                </PressScale>
+                <Text style={{ fontFamily: F.m, fontSize: 12, color: '#FFFFFF' }}>
+                  Quick Capture
+                </Text>
+              </View>
+            </Animated.View>
+          </LinearGradient>
+
+          {/* Bottom Sliding Sheet: Text or Paste Section */}
+          <View
             style={{
-              backgroundColor: cap.quickCaptureActive ? '#FFFFFF' : c.card,
-              borderWidth: 1,
-              borderColor: cap.quickCaptureActive ? '#FFFFFF' : c.border,
-              borderRadius: 18,
-              padding: 18,
-              minHeight: 74,
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 14,
+              flex: 1,
+              backgroundColor: '#EBF2FA',
+              borderTopLeftRadius: 32,
+              borderTopRightRadius: 32,
+              paddingHorizontal: 22,
+              paddingTop: 16,
+              paddingBottom: Math.max(i.bottom, 20) + 24,
+              gap: 16,
             }}
           >
-            <View style={{ width: 42, height: 42, borderRadius: 12, backgroundColor: cap.quickCaptureActive ? '#080809' : c.secondary, borderWidth: 1, borderColor: cap.quickCaptureActive ? '#080809' : c.border, alignItems: 'center', justifyContent: 'center' }}>
-              <Ionicons name={cap.quickCaptureActive ? "radio-button-on" : "layers-outline"} size={22} color={cap.quickCaptureActive ? '#FFFFFF' : '#FFFFFF'} />
-            </View>
-            <View style={{ flex: 1, gap: 2 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Text style={{ fontFamily: F.s, fontSize: 16, color: cap.quickCaptureActive ? '#080809' : c.foreground }}>{S.home.quickCapture}</Text>
-                {cap.quickCaptureActive ? (
-                  <View style={{ backgroundColor: '#080809', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 999 }}>
-                    <Text style={{ fontFamily: F.b, fontSize: 11, color: '#FFFFFF' }}>{S.home.quickCaptureActiveBadge}</Text>
-                  </View>
-                ) : null}
-              </View>
-              <Text style={{ fontFamily: F.r, fontSize: 13, color: cap.quickCaptureActive ? '#080809' : c.mutedForeground, opacity: cap.quickCaptureActive ? 0.75 : 1 }}>
-                {cap.quickCaptureActive ? S.home.quickCaptureTapToStop : S.home.quickCaptureHint}
-              </Text>
-            </View>
-          </PressScale>
-        ) : null}
-      </Animated.View>
-
-      {/* Text Extraction Card */}
-      <Animated.View
-        entering={FadeInDown.delay(200).duration(450)}
-        style={{
-          backgroundColor: c.card,
-          borderRadius: 20,
-          borderWidth: 1,
-          borderColor: c.border,
-          padding: 18,
-          gap: 12,
-          marginTop: 10,
-        }}
-      >
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Text style={{ fontFamily: F.s, fontSize: 11, letterSpacing: 0.9, textTransform: 'uppercase', color: '#71717A' }}>
-            {S.home.orText}
-          </Text>
-          {cap.text ? (
-            <Pressable onPress={() => cap.setText('')} hitSlop={8}>
-              <Text style={{ fontFamily: F.m, fontSize: 12, color: '#A1A1AA' }}>Clear</Text>
-            </Pressable>
-          ) : null}
-        </View>
-
-        <TextInput
-          testID="text-input"
-          accessibilityLabel={S.home.textLabel}
-          value={cap.text}
-          onChangeText={cap.setText}
-          placeholder={S.home.textPlaceholder}
-          placeholderTextColor="#71717A"
-          multiline
-          textAlignVertical="top"
-          style={{
-            minHeight: 110,
-            backgroundColor: c.secondary,
-            borderRadius: 14,
-            borderWidth: 1,
-            borderColor: c.border,
-            padding: 14,
-            fontFamily: F.r,
-            fontSize: 15,
-            color: c.foreground,
-          }}
-        />
-
-        <View style={{ flexDirection: 'row', gap: 10 }}>
-          <View style={{ flex: 1 }}>
-            <Button
-              testID="find-numbers"
-              label={S.home.findNumbers}
-              icon="search"
-              variant="primary"
-              disabled={!cap.text.trim()}
-              onPress={() => cap.processText(cap.text)}
+            {/* Grab Handle */}
+            <View
+              style={{
+                width: 44,
+                height: 4,
+                borderRadius: 2,
+                backgroundColor: '#94A3B8',
+                alignSelf: 'center',
+                marginBottom: 6,
+              }}
             />
-          </View>
-          {cap.text ? (
-            <Button testID="clear-text" label={S.home.clearText} variant="ghost" onPress={() => cap.setText('')} compact />
-          ) : null}
-        </View>
-      </Animated.View>
 
-      {/* Privacy and Help Card (Moved down from header as requested) */}
-      <Animated.View entering={FadeInDown.delay(260).duration(450)} style={{ marginTop: 6 }}>
-        <PressScale
-          testID="open-settings"
-          accessibilityRole="button"
-          accessibilityLabel={S.home.settings}
-          accessibilityHint="Tap to view offline privacy policy and help"
-          onPress={() => { tap(); setSettingsOpen(true); }}
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: 14,
-            padding: 18,
-            borderRadius: 20,
-            backgroundColor: c.card,
-            borderWidth: 1,
-            borderColor: c.border,
-          }}
-        >
-          <View style={{ width: 42, height: 42, borderRadius: 13, backgroundColor: c.secondary, borderWidth: 1, borderColor: c.border, alignItems: 'center', justifyContent: 'center' }}>
-            <Ionicons name="shield-checkmark-outline" size={20} color="#FFFFFF" />
-          </View>
-          <View style={{ flex: 1, gap: 3 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Text style={{ fontFamily: F.s, fontSize: 16, color: c.foreground }}>{S.home.settings}</Text>
-              <View style={{ backgroundColor: 'rgba(255, 255, 255, 0.08)', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 999 }}>
-                <Text style={{ fontFamily: F.m, fontSize: 10, color: '#A1A1AA', letterSpacing: 0.5 }}>100% OFFLINE</Text>
-              </View>
-            </View>
-            <Text style={{ fontFamily: F.r, fontSize: 13, lineHeight: 18, color: c.mutedForeground }}>
-              {Platform.OS === 'web' ? S.home.browserPrivacy : S.home.privacy}
+            {messages}
+
+            {/* Title: Text or Paste */}
+            <Text
+              style={{
+                fontFamily: F.b,
+                fontSize: 18,
+                color: '#0F172A',
+                letterSpacing: -0.3,
+              }}
+            >
+              Text or Paste
             </Text>
-          </View>
-          <Ionicons name="chevron-forward" size={18} color="#71717A" />
-        </PressScale>
-      </Animated.View>
 
-      {!cap.nativeAvailable ? <Banner kind="notice" testID="web-note" text={S.home.webNote} /> : null}
-    </>
-  ) : (
-    <>
-      {/* Review Screen Header */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8, marginBottom: 12 }}>
-        <Text accessibilityRole="header" style={{ fontFamily: F.b, fontSize: 30, letterSpacing: -0.8, color: c.foreground }}>
-          {S.review.title}
-        </Text>
-        <Button testID="discard" label={S.review.discard} icon="trash-outline" variant="ghost" compact onPress={() => { setRawOpen(false); cap.clear(); }} hint={S.review.discardLabel} />
-      </View>
-      {messages}
-
-      {/* Review Summary Panel */}
-      <View
-        style={{
-          flexDirection: 'row',
-          gap: 14,
-          alignItems: 'center',
-          backgroundColor: c.card,
-          borderRadius: 18,
-          borderWidth: 1,
-          borderColor: c.border,
-          padding: 16,
-        }}
-      >
-        {cap.imageUri ? (
-          <Image testID="thumbnail" source={{ uri: cap.imageUri }} accessibilityLabel={S.review.imageLabel} style={{ width: 72, height: 72, borderRadius: 14, backgroundColor: c.secondary, borderWidth: 1, borderColor: c.border }} />
-        ) : (
-          <View style={{ width: 72, height: 72, borderRadius: 14, backgroundColor: c.secondary, borderWidth: 1, borderColor: c.border, alignItems: 'center', justifyContent: 'center' }}>
-            <Ionicons name="document-text-outline" size={28} color="#FFFFFF" />
-          </View>
-        )}
-        <View style={{ flex: 1, gap: 6 }}>
-          <Text accessibilityLiveRegion="polite" style={{ fontFamily: F.b, fontSize: 18, color: c.foreground, letterSpacing: -0.3 }}>
-            {cap.phase === 'processing' ? S.review.processing : S.review.found(cap.candidates.length)}
-          </Text>
-          {cap.candidates.length > 1 ? (
-            <Pressable testID="select-all" accessibilityRole="button" accessibilityLabel={allSelected ? S.review.selectNone : S.review.selectAll} onPress={() => { tap(); cap.selectAll(!allSelected); }} style={{ minHeight: 36, justifyContent: 'center' }} hitSlop={8}>
-              <Text style={{ fontFamily: F.s, fontSize: 14, color: '#FFFFFF', textDecorationLine: 'underline' }}>
-                {allSelected ? S.review.selectNone : S.review.selectAll}
-              </Text>
-            </Pressable>
-          ) : null}
-        </View>
-      </View>
-
-      {/* Detected Countries Panel */}
-      {detectedCountries.length > 0 ? (
-        <View testID="detected-countries" style={{ padding: 16, gap: 10, borderRadius: 18, backgroundColor: c.card, borderWidth: 1, borderColor: c.border }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <Ionicons name="globe-outline" size={18} color="#FFFFFF" />
-            <Text style={{ fontFamily: F.s, fontSize: 15, color: c.foreground }}>{S.review.detectedCountries}</Text>
-          </View>
-          <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
-            {detectedCountries.map(region => (
-              <View
-                key={`${region.name}-${region.code}`}
-                style={{
-                  paddingHorizontal: 10,
-                  paddingVertical: 5,
-                  borderRadius: 10,
-                  backgroundColor: c.secondary,
-                  borderWidth: 1,
-                  borderColor: c.border,
-                }}
-              >
-                <Text style={{ fontFamily: F.m, fontSize: 13, color: c.foreground }}>
-                  {region.name} +{region.code}
-                </Text>
-              </View>
-            ))}
-          </View>
-          <Text style={{ fontFamily: F.r, fontSize: 13, lineHeight: 19, color: c.mutedForeground }}>{S.review.mixedCountryHint}</Text>
-        </View>
-      ) : null}
-      {detectedCountries.length === 0 || cap.candidates.some(row => !row.international) ? countryChip : null}
-
-      {cap.phase === 'processing' ? (
-        <View testID="processing" accessibilityLabel={S.review.processingBody} style={{ gap: 12 }}>
-          <Text accessibilityLiveRegion="polite" style={{ fontFamily: F.r, fontSize: 15, color: c.mutedForeground }}>{Platform.OS === 'web' ? S.review.browserProcessing(Math.round(cap.ocrProgress * 100)) : S.review.processingBody}</Text>
-          <Skeleton h={190} /><Skeleton h={190} />
-        </View>
-      ) : cap.candidates.length === 0 ? (
-        <Animated.View entering={FadeIn} testID="empty" style={{ backgroundColor: c.card, borderRadius: 22, padding: 24, gap: 12, borderWidth: 1, borderColor: c.border, alignItems: 'center' }}>
-          <View style={{ width: 52, height: 52, borderRadius: 16, backgroundColor: c.secondary, borderWidth: 1, borderColor: c.border, alignItems: 'center', justifyContent: 'center' }}>
-            <Ionicons name="search-outline" size={26} color="#A1A1AA" />
-          </View>
-          <Text style={{ fontFamily: F.b, fontSize: 20, color: c.foreground, textAlign: 'center' }}>{S.review.emptyTitle}</Text>
-          <Text style={{ fontFamily: F.r, fontSize: 14, lineHeight: 21, color: c.mutedForeground, textAlign: 'center' }}>{nativeOcrUnavailable ? S.review.previewManualBody : S.review.emptyBody}</Text>
-          <View style={{ marginTop: 8, gap: 10, width: '100%' }}>
-            {cap.imageUri && cap.ocrAvailable ? <Button testID="retry" label={S.review.retry} icon="refresh" onPress={() => { cap.retry(); }} /> : null}
-            <Button testID="try-again" label={S.review.tryAgain} variant="secondary" onPress={cap.clear} />
-          </View>
-        </Animated.View>
-      ) : (
-        <View style={{ gap: 12 }}>
-          {/* Swiper Controls & Pagination */}
-          {cap.candidates.length > 1 ? (
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 4 }}>
-              <PressScale
-                testID="prev-card"
-                accessibilityRole="button"
-                accessibilityLabel="Previous contact"
-                disabled={currentCardIndex === 0}
-                onPress={() => scrollToIndex(Math.max(0, currentCardIndex - 1))}
-                style={{
-                  width: 40,
-                  height: 40,
-                  borderRadius: 20,
-                  backgroundColor: c.card,
-                  borderWidth: 1,
-                  borderColor: c.border,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  opacity: currentCardIndex === 0 ? 0.3 : 1,
-                }}
-              >
-                <Ionicons name="chevron-back" size={20} color="#FFFFFF" />
-              </PressScale>
-
-              <View style={{ alignItems: 'center', gap: 6 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  {cap.candidates.map((_, idx) => (
-                    <Pressable
-                      key={idx}
-                      onPress={() => scrollToIndex(idx)}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Go to contact ${idx + 1}`}
-                      hitSlop={8}
-                    >
-                      <View
-                        style={{
-                          width: idx === currentCardIndex ? 22 : 8,
-                          height: 8,
-                          borderRadius: 4,
-                          backgroundColor: idx === currentCardIndex ? '#FFFFFF' : c.border,
-                        }}
-                      />
-                    </Pressable>
-                  ))}
-                </View>
-                <Text style={{ fontFamily: F.m, fontSize: 12, color: c.mutedForeground }}>
-                  {`Contact ${currentCardIndex + 1} of ${cap.candidates.length}  ·  Swipe left / right`}
-                </Text>
-              </View>
-
-              <PressScale
-                testID="next-card"
-                accessibilityRole="button"
-                accessibilityLabel="Next contact"
-                disabled={currentCardIndex === cap.candidates.length - 1}
-                onPress={() => scrollToIndex(Math.min(cap.candidates.length - 1, currentCardIndex + 1))}
-                style={{
-                  width: 40,
-                  height: 40,
-                  borderRadius: 20,
-                  backgroundColor: c.card,
-                  borderWidth: 1,
-                  borderColor: c.border,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  opacity: currentCardIndex === cap.candidates.length - 1 ? 0.3 : 1,
-                }}
-              >
-                <Ionicons name="chevron-forward" size={20} color="#FFFFFF" />
-              </PressScale>
-            </View>
-          ) : null}
-
-          {/* Horizontal Swiper Carousel */}
-          <FlatList
-            ref={flatListRef}
-            data={cap.candidates}
-            keyExtractor={(cd) => cd.id}
-            horizontal
-            snapToInterval={cardWidth + 12}
-            snapToAlignment="center"
-            decelerationRate="fast"
-            showsHorizontalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-            nestedScrollEnabled
-            contentContainerStyle={{ gap: 12 }}
-            onMomentumScrollEnd={(e) => {
-              const x = e.nativeEvent.contentOffset.x;
-              const nextIdx = Math.round(x / (cardWidth + 12));
-              if (nextIdx >= 0 && nextIdx < cap.candidates.length) {
-                setCurrentCardIndex(nextIdx);
-              }
-            }}
-            onScrollToIndexFailed={(info) => {
-              flatListRef.current?.scrollToOffset({ offset: info.index * (cardWidth + 12), animated: true });
-            }}
-            renderItem={({ item: cd, index: n }) => (
-              <View style={{ width: cardWidth }}>
-                <CandidateCard
-                  cand={cd}
-                  index={n}
-                  total={cap.candidates.length}
-                  onChange={(patch) => cap.updateCandidate(cd.id, patch)}
-                  onAction={(a) => { cap.action(cd.id, a); }}
+            {/* Pure White Text Input Card */}
+            <View
+              style={{
+                backgroundColor: '#FFFFFF',
+                borderRadius: 18,
+                borderWidth: 1,
+                borderColor: '#CBD5E1',
+                padding: 16,
+                minHeight: 110,
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.04,
+                shadowRadius: 6,
+              }}
+            >
+              <View style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
+                <Ionicons name="document-text-outline" size={20} color="#64748B" style={{ marginTop: 2 }} />
+                <TextInput
+                  testID="text-input"
+                  accessibilityLabel={S.home.textLabel}
+                  value={cap.text}
+                  onChangeText={cap.setText}
+                  placeholder="Paste or type text containing phone numbers here."
+                  placeholderTextColor="#94A3B8"
+                  multiline
+                  textAlignVertical="top"
+                  style={{
+                    flex: 1,
+                    fontFamily: F.r,
+                    fontSize: 14,
+                    color: '#0F172A',
+                    minHeight: 80,
+                  }}
                 />
               </View>
-            )}
-          />
-        </View>
-      )}
-
-      {/* Raw / Edit Text Panel */}
-      {cap.phase !== 'processing' ? (
-        <View style={{ backgroundColor: c.card, borderRadius: 18, borderWidth: 1, borderColor: c.border, overflow: 'hidden', marginTop: 4 }}>
-          <Pressable testID="raw-toggle" accessibilityRole="button" accessibilityState={{ expanded: rawOpen }} accessibilityLabel={nativeOcrUnavailable ? S.review.previewTextTitle : S.review.rawTitle}
-            onPress={() => { tap(); setRawOpen(!rawOpen); }} style={{ minHeight: 54, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-            <Text style={{ flex: 1, fontFamily: F.s, fontSize: 15, color: c.foreground }}>{nativeOcrUnavailable ? S.review.previewTextTitle : S.review.rawTitle}</Text>
-            <Ionicons name={rawOpen ? 'chevron-up' : 'chevron-down'} size={18} color="#A1A1AA" />
-          </Pressable>
-          {rawOpen ? (
-            <View style={{ padding: 16, paddingTop: 0, gap: 10 }}>
-              <Text style={{ fontFamily: F.r, fontSize: 13, color: c.mutedForeground }}>{nativeOcrUnavailable ? S.review.previewTextHint : S.review.rawHint}</Text>
-              <TextInput testID="raw-input" accessibilityLabel={nativeOcrUnavailable ? S.review.previewTextTitle : S.review.rawTitle} value={cap.text} onChangeText={cap.setText} multiline textAlignVertical="top" placeholder={S.home.textPlaceholder} placeholderTextColor="#71717A"
-                style={{ minHeight: 110, backgroundColor: c.secondary, borderRadius: 14, borderWidth: 1, borderColor: c.border, padding: 14, fontFamily: F.r, fontSize: 15, color: c.foreground }} />
-              <Button testID="rescan" label={nativeOcrUnavailable ? S.review.findNumbersInText : S.review.rescan} icon="search" variant="secondary" disabled={!cap.text.trim()} onPress={() => cap.processText(cap.text)} />
             </View>
-          ) : null}
-        </View>
-      ) : null}
-    </>
-  );
 
+            {/* Primary Action Button: Find Numbers → */}
+            <PressScale
+              testID="find-numbers"
+              accessibilityRole="button"
+              accessibilityLabel="Find Numbers"
+              disabled={!cap.text.trim()}
+              onPress={() => {
+                if (cap.text.trim()) {
+                  setSearchHistory((prev) => [cap.text.trim(), ...prev.slice(0, 9)]);
+                  cap.processText(cap.text);
+                }
+              }}
+              style={{
+                backgroundColor: '#000000',
+                height: 50,
+                borderRadius: 999,
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+                opacity: cap.text.trim() ? 1 : 0.4,
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 3 },
+                shadowOpacity: 0.2,
+                shadowRadius: 6,
+                elevation: 3,
+              }}
+            >
+              <Text style={{ fontFamily: F.b, fontSize: 15, color: '#FFFFFF' }}>
+                Find Numbers
+              </Text>
+              <Ionicons name="arrow-forward" size={17} color="#FFFFFF" />
+            </PressScale>
+
+            {/* Secondary Button: Search History */}
+            <PressScale
+              testID="search-history-btn"
+              accessibilityRole="button"
+              accessibilityLabel="Search History"
+              onPress={() => {
+                tap();
+                setHistoryOpen(true);
+              }}
+              style={{
+                backgroundColor: '#E2E8F0',
+                height: 48,
+                borderRadius: 999,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Text style={{ fontFamily: F.m, fontSize: 14, color: '#334155' }}>
+                Search History
+              </Text>
+            </PressScale>
+
+            {/* Privacy and Help Footer Trigger */}
+            <PressScale
+              testID="open-settings"
+              accessibilityRole="button"
+              accessibilityLabel="Privacy and help"
+              onPress={() => {
+                tap();
+                setSettingsOpen(true);
+              }}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 6,
+                paddingVertical: 10,
+              }}
+            >
+              <Ionicons name="shield-checkmark-outline" size={15} color="#64748B" />
+              <Text style={{ fontFamily: F.m, fontSize: 13, color: '#64748B' }}>
+                Privacy and help
+              </Text>
+            </PressScale>
+          </View>
+        </KeyboardAwareScrollViewCompat>
+
+        {/* Search History Modal */}
+        <Modal visible={historyOpen} animationType="slide" transparent onRequestClose={() => setHistoryOpen(false)}>
+          <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
+            <View
+              style={{
+                backgroundColor: '#FFFFFF',
+                borderTopLeftRadius: 28,
+                borderTopRightRadius: 28,
+                padding: 24,
+                maxHeight: '70%',
+                gap: 16,
+              }}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Text style={{ fontFamily: F.b, fontSize: 18, color: '#0F172A' }}>Search History</Text>
+                <PressScale onPress={() => setHistoryOpen(false)}>
+                  <Ionicons name="close" size={22} color="#64748B" />
+                </PressScale>
+              </View>
+              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 10 }}>
+                {searchHistory.map((item, idx) => (
+                  <PressScale
+                    key={idx}
+                    onPress={() => {
+                      cap.setText(item);
+                      setHistoryOpen(false);
+                      cap.processText(item);
+                    }}
+                    style={{
+                      padding: 14,
+                      borderRadius: 12,
+                      backgroundColor: '#F8FAFC',
+                      borderWidth: 1,
+                      borderColor: '#E2E8F0',
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                    }}
+                  >
+                    <Text numberOfLines={1} style={{ fontFamily: F.r, fontSize: 14, color: '#0F172A', flex: 1 }}>
+                      {item}
+                    </Text>
+                    <Ionicons name="arrow-forward" size={16} color="#64748B" />
+                  </PressScale>
+                ))}
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Global Sheets & Modals */}
+        <CountrySheet visible={countryOpen} countries={cap.countries} value={cap.country} onSelect={cap.setCountry} onClose={() => setCountryOpen(false)} />
+        <SettingsModal
+          visible={settingsOpen}
+          onClose={() => setSettingsOpen(false)}
+          onOpenSettings={() => { cap.openSettings(); }}
+          user={auth.user}
+          subscription={auth.subscription}
+          onOpenAuth={() => setAuthOpen(true)}
+          onOpenSubscription={() => setSubscriptionOpen(true)}
+        />
+        <AuthModal
+          visible={authOpen}
+          onClose={() => setAuthOpen(false)}
+          user={auth.user}
+          onLogin={auth.login}
+          onSignup={auth.signup}
+          onLogout={auth.logout}
+          error={auth.authError}
+          onClearError={auth.clearAuthError}
+          onOpenSubscription={() => setSubscriptionOpen(true)}
+        />
+        <SubscriptionModal
+          visible={subscriptionOpen}
+          onClose={() => setSubscriptionOpen(false)}
+          subscription={auth.subscription}
+          onOpenCashfree={() => setCashfreeOpen(true)}
+          onToggleAutoRenewal={auth.toggleAutoRenewal}
+          userEmail={auth.user?.email}
+        />
+        <CashfreeModal
+          visible={cashfreeOpen}
+          onClose={() => setCashfreeOpen(false)}
+          customerEmail={auth.user?.email}
+          onSuccess={(result) => {
+            auth.activateAnnualSubscription(result);
+          }}
+        />
+      </View>
+    );
+  }
+
+  // -------------------------------------------------------------
+  // REVIEW SCREENS: SCREEN 3 (Single Card) & SCREEN 4 (List View)
+  // -------------------------------------------------------------
   return (
-    <View style={{ flex: 1, backgroundColor: c.background }}>
-      <StatusBar style="light" />
+    <View style={{ flex: 1, backgroundColor: '#F1F5F9' }}>
+      <StatusBar style="dark" />
       <KeyboardAwareScrollViewCompat
         testID="main-scroll"
         bottomOffset={24}
         contentContainerStyle={{
-          paddingTop: Math.max(i.top, 44) + 16,
+          paddingTop: Math.max(i.top, 44) + 12,
           paddingHorizontal: 20,
-          paddingBottom: Math.max(i.bottom, 16) + (reviewing && cap.candidates.length ? 150 : 36),
-          gap: 16,
+          paddingBottom: Math.max(i.bottom, 16) + (cap.candidates.length ? 140 : 36),
+          gap: 14,
         }}
       >
-        <View style={{ maxWidth: 520, width: '100%', alignSelf: 'center', gap: 16 }}>
-          {body}
+        <View style={{ maxWidth: 520, width: '100%', alignSelf: 'center', gap: 14 }}>
+          {/* Header Row: < Review + View Toggle + Discard */}
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: 4,
+            }}
+          >
+            {/* Back to Review / Home */}
+            <PressScale
+              testID="review-back"
+              accessibilityRole="button"
+              accessibilityLabel="Back to home"
+              onPress={() => {
+                tap();
+                cap.clear();
+              }}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
+            >
+              <Ionicons name="chevron-back" size={22} color="#0F172A" />
+              <Text
+                accessibilityRole="header"
+                style={{
+                  fontFamily: F.b,
+                  fontSize: 20,
+                  color: '#0F172A',
+                  letterSpacing: -0.4,
+                }}
+              >
+                Review
+              </Text>
+            </PressScale>
+
+            {/* Center Toggle: Card View vs List View */}
+            {cap.candidates.length > 1 ? (
+              <View
+                style={{
+                  flexDirection: 'row',
+                  backgroundColor: '#E2E8F0',
+                  borderRadius: 999,
+                  padding: 3,
+                }}
+              >
+                <PressScale
+                  testID="toggle-card-view"
+                  accessibilityRole="button"
+                  accessibilityLabel="Card View"
+                  onPress={() => {
+                    tap();
+                    setViewMode('card');
+                  }}
+                  style={{
+                    paddingHorizontal: 12,
+                    paddingVertical: 5,
+                    borderRadius: 999,
+                    backgroundColor: viewMode === 'card' ? '#000000' : 'transparent',
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontFamily: F.s,
+                      fontSize: 12,
+                      color: viewMode === 'card' ? '#FFFFFF' : '#64748B',
+                    }}
+                  >
+                    Card
+                  </Text>
+                </PressScale>
+                <PressScale
+                  testID="toggle-list-view"
+                  accessibilityRole="button"
+                  accessibilityLabel="List View"
+                  onPress={() => {
+                    tap();
+                    setViewMode('list');
+                  }}
+                  style={{
+                    paddingHorizontal: 12,
+                    paddingVertical: 5,
+                    borderRadius: 999,
+                    backgroundColor: viewMode === 'list' ? '#000000' : 'transparent',
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontFamily: F.s,
+                      fontSize: 12,
+                      color: viewMode === 'list' ? '#FFFFFF' : '#64748B',
+                    }}
+                  >
+                    List
+                  </Text>
+                </PressScale>
+              </View>
+            ) : null}
+
+            {/* Discard Black Pill Button */}
+            <PressScale
+              testID="discard"
+              accessibilityRole="button"
+              accessibilityLabel="Discard"
+              onPress={() => {
+                setRawOpen(false);
+                cap.clear();
+              }}
+              style={{
+                backgroundColor: '#000000',
+                paddingHorizontal: 16,
+                paddingVertical: 7,
+                borderRadius: 999,
+              }}
+            >
+              <Text style={{ fontFamily: F.b, fontSize: 13, color: '#FFFFFF' }}>
+                Discard
+              </Text>
+            </PressScale>
+          </View>
+
+          {messages}
+
+          {cap.phase === 'processing' ? (
+            <View testID="processing" style={{ gap: 12, paddingVertical: 20 }}>
+              <Text style={{ fontFamily: F.r, fontSize: 15, color: '#64748B', textAlign: 'center' }}>
+                {Platform.OS === 'web'
+                  ? S.review.browserProcessing(Math.round(cap.ocrProgress * 100))
+                  : S.review.processingBody}
+              </Text>
+              <Skeleton h={190} />
+              <Skeleton h={190} />
+            </View>
+          ) : cap.candidates.length === 0 ? (
+            <Animated.View
+              entering={FadeIn}
+              testID="empty"
+              style={{
+                backgroundColor: '#FFFFFF',
+                borderRadius: 20,
+                padding: 24,
+                gap: 12,
+                borderWidth: 1,
+                borderColor: '#E2E8F0',
+                alignItems: 'center',
+              }}
+            >
+              <View
+                style={{
+                  width: 52,
+                  height: 52,
+                  borderRadius: 16,
+                  backgroundColor: '#F1F5F9',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Ionicons name="search-outline" size={26} color="#64748B" />
+              </View>
+              <Text style={{ fontFamily: F.b, fontSize: 20, color: '#0F172A', textAlign: 'center' }}>
+                {S.review.emptyTitle}
+              </Text>
+              <Text style={{ fontFamily: F.r, fontSize: 14, lineHeight: 21, color: '#64748B', textAlign: 'center' }}>
+                {nativeOcrUnavailable ? S.review.previewManualBody : S.review.emptyBody}
+              </Text>
+              <View style={{ marginTop: 8, gap: 10, width: '100%' }}>
+                {cap.imageUri && cap.ocrAvailable ? (
+                  <Button testID="retry" label={S.review.retry} icon="refresh" onPress={() => { cap.retry(); }} />
+                ) : null}
+                <Button testID="try-again" label={S.review.tryAgain} variant="secondary" onPress={cap.clear} />
+              </View>
+            </Animated.View>
+          ) : viewMode === 'list' ? (
+            // SCREEN 4: Multi-Select Contacts List View
+            <ContactsListView
+              candidates={cap.candidates}
+              onToggle={(id, sel) => cap.updateCandidate(id, { selected: sel })}
+              onToggleAll={() => cap.selectAll(!allSelected)}
+              allSelected={allSelected}
+              onSelectCandidate={(index) => {
+                setCurrentCardIndex(index);
+                setViewMode('card');
+              }}
+              onDeleteSelected={() => {
+                cap.candidates.filter(c => c.selected).forEach(c => cap.updateCandidate(c.id, { selected: false }));
+              }}
+            />
+          ) : (
+            // SCREEN 3: Single Card View with Carousel Navigation
+            <View style={{ gap: 14 }}>
+              {/* Pagination Bar: <  1 of 5  > */}
+              {cap.candidates.length > 1 ? (
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    paddingHorizontal: 8,
+                  }}
+                >
+                  <PressScale
+                    testID="prev-card"
+                    accessibilityRole="button"
+                    accessibilityLabel="Previous contact"
+                    disabled={currentCardIndex === 0}
+                    onPress={() => scrollToIndex(Math.max(0, currentCardIndex - 1))}
+                    style={{
+                      width: 36,
+                      height: 36,
+                      borderRadius: 18,
+                      backgroundColor: '#FFFFFF',
+                      borderWidth: 1,
+                      borderColor: '#E2E8F0',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      opacity: currentCardIndex === 0 ? 0.35 : 1,
+                    }}
+                  >
+                    <Ionicons name="chevron-back" size={18} color="#0F172A" />
+                  </PressScale>
+
+                  {/* 1 of 5 and dots */}
+                  <View style={{ alignItems: 'center', gap: 4 }}>
+                    <Text style={{ fontFamily: F.m, fontSize: 12, color: '#64748B' }}>
+                      {`${currentCardIndex + 1} of ${cap.candidates.length}`}
+                    </Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                      {cap.candidates.map((_, idx) => (
+                        <Pressable key={idx} onPress={() => scrollToIndex(idx)} hitSlop={6}>
+                          <View
+                            style={{
+                              width: idx === currentCardIndex ? 16 : 6,
+                              height: 6,
+                              borderRadius: 3,
+                              backgroundColor: idx === currentCardIndex ? '#0284C7' : '#CBD5E1',
+                            }}
+                          />
+                        </Pressable>
+                      ))}
+                    </View>
+                  </View>
+
+                  <PressScale
+                    testID="next-card"
+                    accessibilityRole="button"
+                    accessibilityLabel="Next contact"
+                    disabled={currentCardIndex === cap.candidates.length - 1}
+                    onPress={() => scrollToIndex(Math.min(cap.candidates.length - 1, currentCardIndex + 1))}
+                    style={{
+                      width: 36,
+                      height: 36,
+                      borderRadius: 18,
+                      backgroundColor: '#FFFFFF',
+                      borderWidth: 1,
+                      borderColor: '#E2E8F0',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      opacity: currentCardIndex === cap.candidates.length - 1 ? 0.35 : 1,
+                    }}
+                  >
+                    <Ionicons name="chevron-forward" size={18} color="#0F172A" />
+                  </PressScale>
+                </View>
+              ) : null}
+
+              {/* Default Country Selector Card */}
+              <PressScale
+                testID="country-chip"
+                accessibilityRole="button"
+                accessibilityLabel={`${S.home.country}: ${countryName?.name ?? cap.country}`}
+                onPress={() => {
+                  tap();
+                  setCountryOpen(true);
+                }}
+                style={{
+                  backgroundColor: '#FFFFFF',
+                  borderRadius: 16,
+                  borderWidth: 1,
+                  borderColor: '#E2E8F0',
+                  paddingHorizontal: 16,
+                  paddingVertical: 12,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 12,
+                  shadowColor: '#000',
+                  shadowOffset: { width: 0, height: 1 },
+                  shadowOpacity: 0.03,
+                  shadowRadius: 4,
+                  elevation: 1,
+                }}
+              >
+                <View
+                  style={{
+                    width: 34,
+                    height: 34,
+                    borderRadius: 17,
+                    backgroundColor: '#F1F5F9',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Ionicons name="globe-outline" size={18} color="#0F172A" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontFamily: F.m, fontSize: 11, color: '#64748B' }}>
+                    Default country
+                  </Text>
+                  <Text style={{ fontFamily: F.b, fontSize: 14, color: '#0F172A' }}>
+                    {countryName ? `${countryName.code} +${countryName.callingCode.replace('+', '')}` : cap.country}
+                  </Text>
+                </View>
+                <Ionicons name="chevron-down" size={16} color="#64748B" />
+              </PressScale>
+
+              {/* Horizontal Swiper Carousel of Cards */}
+              <FlatList
+                ref={flatListRef}
+                data={cap.candidates}
+                keyExtractor={(cd) => cd.id}
+                horizontal
+                snapToInterval={cardWidth + 12}
+                snapToAlignment="center"
+                decelerationRate="fast"
+                showsHorizontalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                nestedScrollEnabled
+                contentContainerStyle={{ gap: 12 }}
+                onMomentumScrollEnd={(e) => {
+                  const x = e.nativeEvent.contentOffset.x;
+                  const nextIdx = Math.round(x / (cardWidth + 12));
+                  if (nextIdx >= 0 && nextIdx < cap.candidates.length) {
+                    setCurrentCardIndex(nextIdx);
+                  }
+                }}
+                onScrollToIndexFailed={(info) => {
+                  flatListRef.current?.scrollToOffset({ offset: info.index * (cardWidth + 12), animated: true });
+                }}
+                renderItem={({ item: cd, index: n }) => (
+                  <View style={{ width: cardWidth }}>
+                    <CandidateCard
+                      cand={cd}
+                      index={n}
+                      total={cap.candidates.length}
+                      onChange={(patch) => cap.updateCandidate(cd.id, patch)}
+                      onAction={(a) => {
+                        cap.action(cd.id, a);
+                      }}
+                    />
+                  </View>
+                )}
+              />
+
+              {/* Collapsible Recognized Text */}
+              <View
+                style={{
+                  backgroundColor: '#FFFFFF',
+                  borderRadius: 16,
+                  borderWidth: 1,
+                  borderColor: '#E2E8F0',
+                  overflow: 'hidden',
+                  marginTop: 2,
+                }}
+              >
+                <Pressable
+                  testID="raw-toggle"
+                  accessibilityRole="button"
+                  accessibilityState={{ expanded: rawOpen }}
+                  accessibilityLabel="Recognized text"
+                  onPress={() => {
+                    tap();
+                    setRawOpen(!rawOpen);
+                  }}
+                  style={{
+                    minHeight: 48,
+                    paddingHorizontal: 16,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                  }}
+                >
+                  <Text style={{ fontFamily: F.s, fontSize: 14, color: '#0F172A' }}>
+                    Recognized text
+                  </Text>
+                  <Ionicons name={rawOpen ? 'chevron-up' : 'chevron-down'} size={16} color="#64748B" />
+                </Pressable>
+                {rawOpen ? (
+                  <View style={{ padding: 16, paddingTop: 0, gap: 10 }}>
+                    <TextInput
+                      testID="raw-input"
+                      value={cap.text}
+                      onChangeText={cap.setText}
+                      multiline
+                      textAlignVertical="top"
+                      placeholder="Recognized OCR text"
+                      placeholderTextColor="#94A3B8"
+                      style={{
+                        minHeight: 90,
+                        backgroundColor: '#F8FAFC',
+                        borderRadius: 12,
+                        borderWidth: 1,
+                        borderColor: '#E2E8F0',
+                        padding: 12,
+                        fontFamily: F.r,
+                        fontSize: 14,
+                        color: '#0F172A',
+                      }}
+                    />
+                    <Button
+                      testID="rescan"
+                      label="Rescan this text"
+                      icon="search"
+                      variant="secondary"
+                      disabled={!cap.text.trim()}
+                      onPress={() => cap.processText(cap.text)}
+                    />
+                  </View>
+                ) : null}
+              </View>
+            </View>
+          )}
         </View>
       </KeyboardAwareScrollViewCompat>
 
-      {/* Screen 8: Sticky Save Action Bar */}
+      {/* Sticky Bottom Action: Review and save contact */}
       {reviewing && cap.candidates.length > 0 && cap.phase !== 'processing' ? (
         <Animated.View
           entering={FadeInDown.duration(300)}
@@ -721,30 +1152,54 @@ export default function Index() {
             left: 0,
             right: 0,
             bottom: 0,
-            backgroundColor: c.background,
+            backgroundColor: '#F1F5F9',
             borderTopWidth: 1,
-            borderTopColor: c.border,
+            borderTopColor: '#E2E8F0',
             paddingHorizontal: 20,
-            paddingTop: 14,
+            paddingTop: 12,
             paddingBottom: Math.max(i.bottom, 16) + 12,
           }}
         >
           <View style={{ maxWidth: 520, width: '100%', alignSelf: 'center', gap: 6 }}>
-            <Button
+            <PressScale
               testID="save-selected"
-              label={saving ? S.summary.saving : selected.length ? S.review.save(selected.length) : S.review.saveNone}
-              icon="person-add-outline"
+              accessibilityRole="button"
+              accessibilityLabel="Review and save contact"
               disabled={!canSave}
-              loading={saving}
-              onPress={() => { Keyboard.dismiss(); cap.saveSelected(); }}
-            />
-            <Text style={{ fontFamily: F.r, fontSize: 12, lineHeight: 17, color: '#71717A', textAlign: 'center' }}>
-              {cap.nativeAvailable ? S.review.saveHint : S.review.nativeOnly}
-            </Text>
+              onPress={() => {
+                Keyboard.dismiss();
+                cap.saveSelected();
+              }}
+              style={{
+                backgroundColor: '#000000',
+                height: 52,
+                borderRadius: 999,
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+                opacity: canSave ? 1 : 0.4,
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.15,
+                shadowRadius: 8,
+                elevation: 3,
+              }}
+            >
+              <Ionicons name="person-outline" size={17} color="#FFFFFF" />
+              <Text style={{ fontFamily: F.b, fontSize: 15, color: '#FFFFFF' }}>
+                {saving
+                  ? 'Saving contacts...'
+                  : selected.length === 1
+                  ? 'Review and save contact'
+                  : `Review and save ${selected.length} contacts`}
+              </Text>
+            </PressScale>
           </View>
         </Animated.View>
       ) : null}
 
+      {/* Global Modals */}
       <CountrySheet visible={countryOpen} countries={cap.countries} value={cap.country} onSelect={cap.setCountry} onClose={() => setCountryOpen(false)} />
       <SettingsModal
         visible={settingsOpen}
@@ -782,6 +1237,7 @@ export default function Index() {
           auth.activateAnnualSubscription(result);
         }}
       />
+      {/* SCREEN 5: Saved Confirmation Page */}
       <SaveSummary visible={showSummary} saving={saving} outcomes={cap.outcomes} total={selected.length} onDone={() => setDismissed(cap.outcomes)} />
     </View>
   );

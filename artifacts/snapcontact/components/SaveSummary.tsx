@@ -1,87 +1,139 @@
 import React from 'react';
-import { Modal, ScrollView, Text, View } from 'react-native';
+import { Modal, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useColors } from '@/hooks/useColors';
-import { S } from '@/lib/strings';
-import { Button, F, Skeleton, useInsets } from './ui';
+import Animated, { FadeIn, FadeInDown, ZoomIn } from 'react-native-reanimated';
+import { F, PressScale, tap, useInsets } from './ui';
 
-export type Outcome = { id: string; name: string; status: 'saved' | 'cancelled' | 'error'; message?: string };
+export type Outcome = {
+  id: string;
+  name: string;
+  status: 'saved' | 'cancelled' | 'error';
+  message?: string;
+};
 
-export function SaveSummary({ visible, saving, outcomes, total, onDone }: { visible: boolean; saving: boolean; outcomes: Outcome[]; total: number; onDone: () => void }) {
-  const c = useColors();
+export function SaveSummary({
+  visible,
+  saving,
+  outcomes,
+  total,
+  onDone,
+}: {
+  visible: boolean;
+  saving: boolean;
+  outcomes: Outcome[];
+  total: number;
+  onDone: () => void;
+}) {
   const i = useInsets();
-  const s = outcomes.filter((o) => o.status === 'saved').length;
-  const ca = outcomes.filter((o) => o.status === 'cancelled').length;
-  const e = outcomes.filter((o) => o.status === 'error').length;
-  const icon = { saved: ['checkmark-circle', '#FFFFFF'], cancelled: ['remove-circle-outline', '#A1A1AA'], error: ['alert-circle', c.destructive] } as const;
-  const label = { saved: S.summary.saved, cancelled: S.summary.cancelled, error: S.summary.error };
+  const savedCount = outcomes.filter((o) => o.status === 'saved').length;
+  const firstSaved = outcomes.find((o) => o.status === 'saved');
+  const contactName = firstSaved?.name ? `"${firstSaved.name}"` : 'Your contact';
 
   return (
     <Modal visible={visible} animationType="fade" transparent onRequestClose={saving ? undefined : onDone}>
-      <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.72)', justifyContent: 'flex-end' }}>
-        <View
-          testID="save-summary"
-          style={{
-            backgroundColor: c.card,
-            borderTopLeftRadius: 28,
-            borderTopRightRadius: 28,
-            borderTopWidth: 1,
-            borderTopColor: c.border,
-            padding: 24,
-            paddingBottom: Math.max(i.bottom, 16) + 24,
-            maxHeight: '80%',
-            maxWidth: 520,
-            width: '100%',
-            alignSelf: 'center',
-          }}
-        >
-          <Text accessibilityRole="header" style={{ fontFamily: F.b, fontSize: 24, color: c.foreground, letterSpacing: -0.5 }}>
-            {saving ? S.summary.saving : S.summary.title}
-          </Text>
-          <Text accessibilityLiveRegion="polite" style={{ fontFamily: F.r, fontSize: 14, color: c.mutedForeground, marginTop: 4, marginBottom: 18 }}>
-            {saving ? `${outcomes.length} of ${total}. ${S.summary.savingBody}` : S.summary.counts(s, ca, e)}
-          </Text>
-          <ScrollView style={{ flexGrow: 0 }} showsVerticalScrollIndicator={false}>
-            {outcomes.map((o) => (
-              <View
-                key={o.id}
-                accessible
-                accessibilityLabel={`${o.name || 'Unnamed'}, ${label[o.status]}${o.message ? '. ' + o.message : ''}`}
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: '#FFFFFF',
+          justifyContent: 'space-between',
+          paddingTop: Math.max(i.top, 44) + 40,
+          paddingBottom: Math.max(i.bottom, 20) + 16,
+          paddingHorizontal: 28,
+        }}
+        testID="save-summary"
+      >
+        {/* Center Saved Animation & Status */}
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16 }}>
+          <Animated.View
+            entering={ZoomIn.duration(400)}
+            style={{
+              width: 88,
+              height: 88,
+              borderRadius: 44,
+              backgroundColor: '#DCFCE7',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: 8,
+            }}
+          >
+            <Ionicons name="checkmark" size={44} color="#16A34A" />
+          </Animated.View>
+
+          <Animated.Text
+            entering={FadeInDown.delay(150).duration(400)}
+            accessibilityRole="header"
+            style={{
+              fontFamily: F.b,
+              fontSize: 24,
+              color: '#0F172A',
+              letterSpacing: -0.5,
+              textAlign: 'center',
+            }}
+          >
+            {saving
+              ? 'Saving Contacts...'
+              : savedCount > 1
+              ? `${savedCount} Contacts Saved`
+              : 'Contact Saved'}
+          </Animated.Text>
+
+          <Animated.Text
+            entering={FadeInDown.delay(250).duration(400)}
+            style={{
+              fontFamily: F.r,
+              fontSize: 14,
+              color: '#64748B',
+              textAlign: 'center',
+              lineHeight: 22,
+              maxWidth: 280,
+            }}
+          >
+            {saving
+              ? `Processing ${outcomes.length} of ${total} contacts on your device.`
+              : savedCount > 1
+              ? `${savedCount} contacts have been successfully added to your device contacts.`
+              : `${contactName} has been successfully added to your device contacts.`}
+          </Animated.Text>
+        </View>
+
+        {/* Bottom Black Done Button */}
+        {!saving ? (
+          <Animated.View entering={FadeIn.delay(350).duration(400)}>
+            <PressScale
+              testID="summary-done"
+              accessibilityRole="button"
+              accessibilityLabel="Done"
+              onPress={() => {
+                tap('medium');
+                onDone();
+              }}
+              style={{
+                backgroundColor: '#000000',
+                height: 52,
+                borderRadius: 999,
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: '100%',
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.15,
+                shadowRadius: 8,
+                elevation: 3,
+              }}
+            >
+              <Text
                 style={{
-                  flexDirection: 'row',
-                  gap: 14,
-                  paddingVertical: 14,
-                  borderBottomWidth: 1,
-                  borderBottomColor: c.border,
-                  alignItems: 'center',
+                  fontFamily: F.b,
+                  fontSize: 16,
+                  color: '#FFFFFF',
+                  letterSpacing: -0.2,
                 }}
               >
-                <Ionicons name={icon[o.status][0]} size={22} color={icon[o.status][1]} />
-                <View style={{ flex: 1, gap: 2 }}>
-                  <Text style={{ fontFamily: F.s, fontSize: 15, color: c.foreground }}>{o.name || 'Unnamed contact'}</Text>
-                  <Text style={{ fontFamily: F.r, fontSize: 13, color: o.status === 'error' ? c.destructive : c.mutedForeground }}>
-                    {o.message || label[o.status]}
-                  </Text>
-                </View>
-              </View>
-            ))}
-            {saving && outcomes.length < total ? (
-              <View style={{ paddingVertical: 12 }}>
-                <Skeleton h={44} />
-              </View>
-            ) : null}
-          </ScrollView>
-          {!saving ? (
-            <View style={{ marginTop: 20, gap: 14 }}>
-              {s > 0 ? (
-                <Text style={{ fontFamily: F.r, fontSize: 12, lineHeight: 18, color: '#71717A', textAlign: 'center' }}>
-                  {S.summary.syncNote}
-                </Text>
-              ) : null}
-              <Button testID="summary-done" label={S.summary.done} onPress={onDone} />
-            </View>
-          ) : null}
-        </View>
+                Done
+              </Text>
+            </PressScale>
+          </Animated.View>
+        ) : null}
       </View>
     </Modal>
   );
