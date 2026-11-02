@@ -75,4 +75,8 @@ router.post('/webhooks/cashfree', (req: Request, res: Response) => {
   return res.status(200).json({ ok: true });
 });
 
+router.get('/webhooks/cashfree', (_req: Request, res: Response) => {
+  return res.json({ status: 'ok', message: 'Webhook endpoint ready. Cashfree sends POST requests here.' });
+});
+
 export default router;
