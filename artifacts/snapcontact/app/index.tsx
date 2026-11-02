@@ -13,15 +13,23 @@ import { CountrySheet } from '@/components/CountrySheet';
 import { SettingsModal } from '@/components/SettingsModal';
 import { SaveSummary } from '@/components/SaveSummary';
 import { CandidateCard } from '@/components/CandidateCard';
+import { AuthModal } from '@/components/AuthModal';
+import { SubscriptionModal } from '@/components/SubscriptionModal';
+import { CashfreeModal } from '@/components/CashfreeModal';
+import { useAuth } from '@/hooks/useAuth';
 
 export default function Index() {
   const cap = useCapture();
+  const auth = useAuth();
   const c = useColors();
   const i = useInsets();
   const { width: windowWidth } = useWindowDimensions();
   const cardWidth = Math.min(windowWidth - 40, 480);
   const [countryOpen, setCountryOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [authOpen, setAuthOpen] = useState(false);
+  const [subscriptionOpen, setSubscriptionOpen] = useState(false);
+  const [cashfreeOpen, setCashfreeOpen] = useState(false);
   const [rawOpen, setRawOpen] = useState(false);
   const [dismissed, setDismissed] = useState<unknown>(null);
   const [currentCardIndex, setCurrentCardIndex] = useState(0);
@@ -97,39 +105,144 @@ export default function Index() {
   );
 
   const header = (
-    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8, marginBottom: 16 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-        <View style={{ width: 42, height: 42, borderRadius: 13, backgroundColor: c.card, borderWidth: 1, borderColor: c.border, alignItems: 'center', justifyContent: 'center' }}>
-          <Ionicons name="scan-outline" size={23} color="#FFFFFF" />
+    <View style={{ gap: 12, marginTop: 8, marginBottom: 14 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <View style={{ width: 42, height: 42, borderRadius: 13, backgroundColor: c.card, borderWidth: 1, borderColor: c.border, alignItems: 'center', justifyContent: 'center' }}>
+            <Ionicons name="scan-outline" size={23} color="#FFFFFF" />
+          </View>
+          <View style={{ gap: 1 }}>
+            <Text accessibilityRole="header" style={{ fontFamily: F.b, fontSize: 21, color: c.foreground, letterSpacing: -0.5 }}>{S.appName}</Text>
+            <Text style={{ fontFamily: F.r, fontSize: 12, color: '#A1A1AA' }}>100% on-device capture</Text>
+          </View>
         </View>
-        <View style={{ gap: 1 }}>
-          <Text accessibilityRole="header" style={{ fontFamily: F.b, fontSize: 21, color: c.foreground, letterSpacing: -0.5 }}>{S.appName}</Text>
-          <Text style={{ fontFamily: F.r, fontSize: 12, color: '#A1A1AA' }}>100% on-device capture</Text>
+
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          {/* Mail Login / Account Button */}
+          <PressScale
+            testID="header-auth-btn"
+            accessibilityRole="button"
+            accessibilityLabel={auth.user ? `Account: ${auth.user.email}` : 'Sign in with email'}
+            onPress={() => { tap(); setAuthOpen(true); }}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 6,
+              paddingHorizontal: 12,
+              paddingVertical: 8,
+              borderRadius: 999,
+              backgroundColor: auth.user ? '#FFFFFF' : c.secondary,
+              borderWidth: 1,
+              borderColor: auth.user ? '#FFFFFF' : c.border,
+            }}
+          >
+            <Ionicons
+              name={auth.user ? 'person-circle' : 'mail-outline'}
+              size={15}
+              color={auth.user ? '#080809' : '#FFFFFF'}
+            />
+            <Text
+              numberOfLines={1}
+              style={{
+                fontFamily: F.s,
+                fontSize: 12,
+                color: auth.user ? '#080809' : c.foreground,
+                maxWidth: 100,
+              }}
+            >
+              {auth.user ? auth.user.email.split('@')[0] : 'Mail Login'}
+            </Text>
+          </PressScale>
+
+          {/* Compact Default Country Selector at Top Right */}
+          <PressScale
+            testID="country-chip"
+            accessibilityRole="button"
+            accessibilityLabel={`${S.home.country}: ${countryName?.name ?? cap.country}. ${S.home.countryHint}`}
+            onPress={() => { tap(); setCountryOpen(true); }}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 6,
+              paddingHorizontal: 11,
+              paddingVertical: 8,
+              borderRadius: 999,
+              backgroundColor: c.secondary,
+              borderWidth: 1,
+              borderColor: c.border,
+            }}
+          >
+            <Ionicons name="globe-outline" size={14} color="#FFFFFF" />
+            <Text style={{ fontFamily: F.s, fontSize: 12, color: c.foreground }}>
+              {countryName ? `${countryName.code} +${countryName.callingCode.replace('+', '')}` : cap.country}
+            </Text>
+            <Ionicons name="chevron-down" size={12} color="#A1A1AA" />
+          </PressScale>
         </View>
       </View>
-      {/* Compact Default Country Selector at Top Right */}
+
+      {/* 1st One-Week Trial & 15-Day Auto-Renewal Cashfree Banner */}
       <PressScale
-        testID="country-chip"
+        testID="trial-banner"
         accessibilityRole="button"
-        accessibilityLabel={`${S.home.country}: ${countryName?.name ?? cap.country}. ${S.home.countryHint}`}
-        onPress={() => { tap(); setCountryOpen(true); }}
+        accessibilityLabel="View subscription and 1-week free trial"
+        onPress={() => { tap(); setSubscriptionOpen(true); }}
         style={{
+          backgroundColor: c.card,
+          borderWidth: 1,
+          borderColor: auth.subscription.status === 'annual' ? '#FFFFFF' : c.border,
+          borderRadius: 16,
+          padding: 13,
           flexDirection: 'row',
           alignItems: 'center',
-          gap: 7,
-          paddingHorizontal: 12,
-          paddingVertical: 8,
-          borderRadius: 999,
-          backgroundColor: c.secondary,
-          borderWidth: 1,
-          borderColor: c.border,
+          gap: 12,
         }}
       >
-        <Ionicons name="globe-outline" size={15} color="#FFFFFF" />
-        <Text style={{ fontFamily: F.s, fontSize: 13, color: c.foreground }}>
-          {countryName ? `${countryName.code} +${countryName.callingCode.replace('+', '')}` : cap.country}
-        </Text>
-        <Ionicons name="chevron-down" size={13} color="#A1A1AA" />
+        <View
+          style={{
+            width: 36,
+            height: 36,
+            borderRadius: 11,
+            backgroundColor: auth.subscription.status === 'annual' ? '#FFFFFF' : c.secondary,
+            borderWidth: 1,
+            borderColor: c.border,
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <Ionicons
+            name={auth.subscription.status === 'annual' ? 'shield-checkmark' : 'sparkles'}
+            size={18}
+            color={auth.subscription.status === 'annual' ? '#080809' : '#FFFFFF'}
+          />
+        </View>
+        <View style={{ flex: 1, gap: 2 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Text style={{ fontFamily: F.b, fontSize: 13, color: c.foreground }}>
+              {auth.subscription.status === 'annual'
+                ? 'Annual Pro Member'
+                : `1st Week Free Trial (${auth.subscription.trialDaysRemaining}d left)`}
+            </Text>
+            <View
+              style={{
+                backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                paddingHorizontal: 6,
+                paddingVertical: 1,
+                borderRadius: 999,
+              }}
+            >
+              <Text style={{ fontFamily: F.b, fontSize: 9, color: '#FFFFFF', letterSpacing: 0.5 }}>
+                CASHFREE
+              </Text>
+            </View>
+          </View>
+          <Text style={{ fontFamily: F.r, fontSize: 11, color: c.mutedForeground, lineHeight: 16 }}>
+            {auth.subscription.status === 'annual'
+              ? `Auto-renews with 15-day notice · Cashfree ref: ${auth.subscription.cashfreePaymentId?.substring(0, 14) || 'active'}`
+              : 'Auto-renewal before 15 days in 1 year · Cancel anytime'}
+          </Text>
+        </View>
+        <Ionicons name="chevron-forward" size={16} color="#71717A" />
       </PressScale>
     </View>
   );
@@ -633,7 +746,42 @@ export default function Index() {
       ) : null}
 
       <CountrySheet visible={countryOpen} countries={cap.countries} value={cap.country} onSelect={cap.setCountry} onClose={() => setCountryOpen(false)} />
-      <SettingsModal visible={settingsOpen} onClose={() => setSettingsOpen(false)} onOpenSettings={() => { cap.openSettings(); }} />
+      <SettingsModal
+        visible={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        onOpenSettings={() => { cap.openSettings(); }}
+        user={auth.user}
+        subscription={auth.subscription}
+        onOpenAuth={() => setAuthOpen(true)}
+        onOpenSubscription={() => setSubscriptionOpen(true)}
+      />
+      <AuthModal
+        visible={authOpen}
+        onClose={() => setAuthOpen(false)}
+        user={auth.user}
+        onLogin={auth.login}
+        onSignup={auth.signup}
+        onLogout={auth.logout}
+        error={auth.authError}
+        onClearError={auth.clearAuthError}
+        onOpenSubscription={() => setSubscriptionOpen(true)}
+      />
+      <SubscriptionModal
+        visible={subscriptionOpen}
+        onClose={() => setSubscriptionOpen(false)}
+        subscription={auth.subscription}
+        onOpenCashfree={() => setCashfreeOpen(true)}
+        onToggleAutoRenewal={auth.toggleAutoRenewal}
+        userEmail={auth.user?.email}
+      />
+      <CashfreeModal
+        visible={cashfreeOpen}
+        onClose={() => setCashfreeOpen(false)}
+        customerEmail={auth.user?.email}
+        onSuccess={(result) => {
+          auth.activateAnnualSubscription(result);
+        }}
+      />
       <SaveSummary visible={showSummary} saving={saving} outcomes={cap.outcomes} total={selected.length} onDone={() => setDismissed(cap.outcomes)} />
     </View>
   );

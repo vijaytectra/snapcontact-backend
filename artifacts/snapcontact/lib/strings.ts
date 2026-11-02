@@ -113,7 +113,8 @@ export const S = {
       ['Share from Photos (iOS)', 'Open a picture in Photos, tap Share, choose SnapContact, then return to SnapContact to review the numbers.'],
        ['Native build required', 'On-device OCR, incoming shares and native contact saving require a compiled SnapContact build, not Expo Go or the browser. Camera import and external links depend on your device and installed apps.'],
       ['Quick Capture (Android)', 'Enables a floating button over apps like Instagram or WhatsApp. Tapping it captures a single screenshot frame, reads the text on-device with ML Kit OCR, and brings you directly to contact review.'],
-      ['Free to use', 'The initial release is free, with no payments or ads.'],
+      ['1-Week Free Trial & Cashfree', 'Enjoy 7 days of full access completely free. The annual plan (₹999/year) renews automatically, with an advance auto-renewal notice sent 15 days prior to the 1-year mark. Payment processing is secured by Cashfree Payments.'],
+      ['Email login & privacy', 'Your email is used to sync your subscription and trial status. SnapContact never uploads your images, contacts, or recognized text—all processing stays strictly on your device.'],
     ] as const,
   },
 };

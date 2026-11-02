@@ -1,9 +1,10 @@
 import React from 'react';
-import { Modal, ScrollView, Text, View } from 'react-native';
+import { Modal, Pressable, ScrollView, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 import { S } from '@/lib/strings';
-import { Button, F, IconButton, useInsets } from './ui';
+import { Button, F, IconButton, PressScale, tap, useInsets } from './ui';
+import { UserProfile, SubscriptionInfo } from '@/lib/auth';
 
 const SECTION_ICONS: Record<string, React.ComponentProps<typeof Ionicons>['name']> = {
   'On-device reading': 'hardware-chip-outline',
@@ -12,10 +13,27 @@ const SECTION_ICONS: Record<string, React.ComponentProps<typeof Ionicons>['name'
   'Share from Photos (iOS)': 'share-social-outline',
   'Native build required': 'phone-portrait-outline',
   'Quick Capture (Android)': 'layers-outline',
+  '1-Week Free Trial & Cashfree': 'card-outline',
   'Free to use': 'sparkles-outline',
 };
 
-export function SettingsModal({ visible, onClose, onOpenSettings }: { visible: boolean; onClose: () => void; onOpenSettings: () => void }) {
+export function SettingsModal({
+  visible,
+  onClose,
+  onOpenSettings,
+  user,
+  subscription,
+  onOpenAuth,
+  onOpenSubscription,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onOpenSettings: () => void;
+  user?: UserProfile | null;
+  subscription?: SubscriptionInfo;
+  onOpenAuth?: () => void;
+  onOpenSubscription?: () => void;
+}) {
   const c = useColors();
   const i = useInsets();
 
@@ -39,7 +57,7 @@ export function SettingsModal({ visible, onClose, onOpenSettings }: { visible: b
                 {S.settings.title}
               </Text>
               <Text style={{ fontFamily: F.r, fontSize: 13, color: c.mutedForeground }}>
-                Privacy guarantees & documentation
+                Account, subscription & privacy guarantees
               </Text>
             </View>
             <IconButton icon="close" label={S.settings.close} onPress={onClose} testID="settings-close" size={38} />
@@ -53,6 +71,120 @@ export function SettingsModal({ visible, onClose, onOpenSettings }: { visible: b
             }}
             showsVerticalScrollIndicator={false}
           >
+            {/* Account & Cashfree Subscription Card */}
+            <View
+              style={{
+                backgroundColor: c.card,
+                borderRadius: 18,
+                borderWidth: 1,
+                borderColor: c.border,
+                padding: 18,
+                gap: 12,
+              }}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <View
+                    style={{
+                      width: 36,
+                      height: 36,
+                      borderRadius: 10,
+                      backgroundColor: c.secondary,
+                      borderWidth: 1,
+                      borderColor: c.border,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Ionicons name="person-outline" size={18} color="#FFFFFF" />
+                  </View>
+                  <View style={{ gap: 1 }}>
+                    <Text style={{ fontFamily: F.b, fontSize: 15, color: c.foreground }}>
+                      {user ? user.email : 'Email Account'}
+                    </Text>
+                    <Text style={{ fontFamily: F.r, fontSize: 12, color: c.mutedForeground }}>
+                      {user ? 'Logged in' : 'Not signed in'}
+                    </Text>
+                  </View>
+                </View>
+
+                {onOpenAuth ? (
+                  <PressScale
+                    testID="settings-auth-btn"
+                    onPress={() => {
+                      tap();
+                      onClose();
+                      onOpenAuth();
+                    }}
+                    style={{
+                      paddingHorizontal: 12,
+                      paddingVertical: 6,
+                      borderRadius: 999,
+                      backgroundColor: c.secondary,
+                      borderWidth: 1,
+                      borderColor: c.border,
+                    }}
+                  >
+                    <Text style={{ fontFamily: F.m, fontSize: 12, color: c.foreground }}>
+                      {user ? 'Manage' : 'Sign In'}
+                    </Text>
+                  </PressScale>
+                ) : null}
+              </View>
+
+              {subscription ? (
+                <View
+                  style={{
+                    backgroundColor: c.secondary,
+                    borderRadius: 12,
+                    borderWidth: 1,
+                    borderColor: c.border,
+                    padding: 12,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                  }}
+                >
+                  <View style={{ gap: 2, flex: 1 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text style={{ fontFamily: F.s, fontSize: 13, color: c.foreground }}>
+                        {subscription.status === 'annual' ? 'Annual Plan' : '1st Week Free Trial'}
+                      </Text>
+                      <View style={{ backgroundColor: '#FFFFFF', paddingHorizontal: 6, paddingVertical: 1, borderRadius: 999 }}>
+                        <Text style={{ fontFamily: F.b, fontSize: 9, color: '#080809' }}>
+                          {subscription.status === 'annual' ? 'PAID' : `${subscription.trialDaysRemaining}d left`}
+                        </Text>
+                      </View>
+                    </View>
+                    <Text style={{ fontFamily: F.r, fontSize: 11, color: c.mutedForeground }}>
+                      Auto-renewal notice 15 days before 1 year · Cashfree PG
+                    </Text>
+                  </View>
+
+                  {onOpenSubscription ? (
+                    <PressScale
+                      testID="settings-subscription-btn"
+                      onPress={() => {
+                        tap();
+                        onClose();
+                        onOpenSubscription();
+                      }}
+                      style={{
+                        paddingHorizontal: 12,
+                        paddingVertical: 6,
+                        borderRadius: 999,
+                        backgroundColor: '#FFFFFF',
+                      }}
+                    >
+                      <Text style={{ fontFamily: F.b, fontSize: 11, color: '#080809' }}>
+                        Details
+                      </Text>
+                    </PressScale>
+                  ) : null}
+                </View>
+              ) : null}
+            </View>
+
             {S.settings.sections.map(([t, b]) => {
               const iconName = SECTION_ICONS[t] || 'shield-checkmark-outline';
               return (
