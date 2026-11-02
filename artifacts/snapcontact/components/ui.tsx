@@ -17,11 +17,16 @@ export function useInsets() {
   };
 }
 
+// Haptics are best-effort: the calls reject asynchronously where the native module is missing
+// (e.g. Expo Go, web), so the promise itself must be caught, not just the call.
 export const tap = (style: 'light' | 'medium' | 'success' | 'warning' = 'light') => {
   try {
-    if (style === 'success') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    else if (style === 'warning') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-    else Haptics.impactAsync(style === 'medium' ? Haptics.ImpactFeedbackStyle.Medium : Haptics.ImpactFeedbackStyle.Light);
+    const feedback = style === 'success'
+      ? Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
+      : style === 'warning'
+      ? Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning)
+      : Haptics.impactAsync(style === 'medium' ? Haptics.ImpactFeedbackStyle.Medium : Haptics.ImpactFeedbackStyle.Light);
+    void feedback?.catch(() => {});
   } catch {}
 };
 
