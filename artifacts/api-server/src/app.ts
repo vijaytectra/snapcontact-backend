@@ -29,6 +29,10 @@ app.use(cors());
 app.use(express.json({ verify: (req: any, _res, buf) => { req.rawBody = buf?.toString(); } }));
 app.use(express.urlencoded({ extended: true }));
 
+app.get("/", (_req, res) => {
+  res.json({ name: "SnapContact API", status: "ok", docs: "/api/healthz" });
+});
+
 app.use("/api", router);
 
 export default app;
