@@ -23,15 +23,21 @@
         "NSPrivacyAccessedAPITypes": [
           {
             "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryUserDefaults",
-            "NSPrivacyAccessedAPITypeReasons": ["CA92.1"]
+            "NSPrivacyAccessedAPITypeReasons": [
+              "CA92.1"
+            ]
           },
           {
             "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryFileTimestamp",
-            "NSPrivacyAccessedAPITypeReasons": ["C617.1"]
+            "NSPrivacyAccessedAPITypeReasons": [
+              "C617.1"
+            ]
           },
           {
             "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryDiskSpace",
-            "NSPrivacyAccessedAPITypeReasons": ["E174.1"]
+            "NSPrivacyAccessedAPITypeReasons": [
+              "E174.1"
+            ]
           }
         ]
       }
@@ -53,24 +59,28 @@
     "web": {
       "favicon": "./assets/images/icon.png"
     },
-    "splash": {
-      "image": "./assets/images/icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#F3EEE3"
-    },
     "plugins": [
       "expo-router",
       "expo-localization",
-      ["expo-image-picker", {
-        "photosPermission": "Choose a screenshot or photo to read on this device. Nothing is uploaded.",
-        "cameraPermission": "Photograph a number to read it on this device. Nothing is uploaded.",
-        "microphonePermission": false
-      }],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Choose a screenshot or photo to read on this device. Nothing is uploaded.",
+          "cameraPermission": "Photograph a number to read it on this device. Nothing is uploaded.",
+          "microphonePermission": false
+        }
+      ],
       "./plugins/withSnapCapture.js"
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "703c5056-086f-4700-a845-33e3380fbfde"
+      }
     }
   }
 }
