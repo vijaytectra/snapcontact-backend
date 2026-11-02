@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import crypto from 'crypto';
-import { findOrderById, getOrders, saveOrders, findUserById, getUsers, saveUsers } from '../lib/storage';
+import { findOrderById, insertOrder, updateOrder, updateUser } from '../lib/storage';
 
 const router: Router = Router();
 // Webhook routes are also mounted at /api so /api/webhooks/cashfree works as well as /api/cashfree/webhooks/cashfree.
@@ -40,16 +40,14 @@ router.post('/orders', async (req: Request, res: Response) => {
     });
     const data: any = await cfRes.json();
     if (!cfRes.ok) return res.status(cfRes.status).json({ error: data?.message || 'Cashfree order failed', details: data });
-    const orders = getOrders();
-    orders.push({ orderId, userId: req.body?.userId || '', amount: payload.order_amount, currency: 'INR', paymentSessionId: data.payment_session_id, status: 'ACTIVE', createdAt: new Date().toISOString() });
-    saveOrders(orders);
+    await insertOrder({ orderId, userId: req.body?.userId || '', amount: payload.order_amount, currency: 'INR', paymentSessionId: data.payment_session_id, status: 'ACTIVE', createdAt: new Date().toISOString(), cashfreePaymentId: null });
     return res.json({ orderId, paymentSessionId: data.payment_session_id, orderStatus: data.order_status });
   } catch (e: any) {
     return res.status(500).json({ error: e?.message || 'Order creation failed' });
   }
 });
 
-webhookRouter.post('/webhooks/cashfree', (req: Request, res: Response) => {
+webhookRouter.post('/webhooks/cashfree', async (req: Request, res: Response) => {
   const signature = req.headers['x-webhook-signature'] as string;
   const timestamp = req.headers['x-webhook-timestamp'] as string;
   const rawBody = (req as any).rawBody || JSON.stringify(req.body);
@@ -58,20 +56,15 @@ webhookRouter.post('/webhooks/cashfree', (req: Request, res: Response) => {
   const event = req.body;
   if (event?.type === 'PAYMENT_SUCCESS_WEBHOOK') {
     const orderId = event?.data?.order?.order_id;
-    const order = findOrderById(orderId);
+    const order = orderId ? await findOrderById(orderId) : undefined;
     if (order && order.status !== 'PAID') {
-      order.status = 'PAID';
-      order.cashfreePaymentId = event?.data?.payment?.cf_payment_id;
-      const orders = getOrders().map(o => o.orderId === orderId ? order : o);
-      saveOrders(orders);
+      const cashfreePaymentId = event?.data?.payment?.cf_payment_id != null ? String(event.data.payment.cf_payment_id) : null;
+      await updateOrder(orderId, { status: 'PAID', cashfreePaymentId });
       // activate subscription for user
-      const users = getUsers();
-      const idx = users.findIndex(u => u.id === order.userId);
-      if (idx >= 0) {
+      if (order.userId) {
         const now = new Date();
         const periodEnd = new Date(now.getTime() + 365*24*60*60*1000);
-        users[idx].subscription = { status: 'annual', cashfreeOrderId: orderId, cashfreePaymentId: order.cashfreePaymentId, currentPeriodStart: now.toISOString(), currentPeriodEnd: periodEnd.toISOString() };
-        saveUsers(users);
+        await updateUser(order.userId, { subscription: { status: 'annual', cashfreeOrderId: orderId, cashfreePaymentId, currentPeriodStart: now.toISOString(), currentPeriodEnd: periodEnd.toISOString() } });
       }
     }
   }
