@@ -3,6 +3,9 @@ import crypto from 'crypto';
 import { findOrderById, getOrders, saveOrders, findUserById, getUsers, saveUsers } from '../lib/storage';
 
 const router: Router = Router();
+// Webhook routes are also mounted at /api so /api/webhooks/cashfree works as well as /api/cashfree/webhooks/cashfree.
+export const webhookRouter: Router = Router();
+router.use(webhookRouter);
 
 const APP_ID = process.env.CASHFREE_APP_ID || '';
 const SECRET_KEY = process.env.CASHFREE_SECRET_KEY || '';
@@ -46,7 +49,7 @@ router.post('/orders', async (req: Request, res: Response) => {
   }
 });
 
-router.post('/webhooks/cashfree', (req: Request, res: Response) => {
+webhookRouter.post('/webhooks/cashfree', (req: Request, res: Response) => {
   const signature = req.headers['x-webhook-signature'] as string;
   const timestamp = req.headers['x-webhook-timestamp'] as string;
   const rawBody = (req as any).rawBody || JSON.stringify(req.body);
@@ -75,7 +78,7 @@ router.post('/webhooks/cashfree', (req: Request, res: Response) => {
   return res.status(200).json({ ok: true });
 });
 
-router.get('/webhooks/cashfree', (_req: Request, res: Response) => {
+webhookRouter.get('/webhooks/cashfree', (_req: Request, res: Response) => {
   return res.json({ status: 'ok', message: 'Webhook endpoint ready. Cashfree sends POST requests here.' });
 });
 
