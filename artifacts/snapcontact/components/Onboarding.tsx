@@ -25,16 +25,21 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
           style={{
             flex: 1,
             width: '100%',
-            maxWidth: contentMaxWidth,
-            alignSelf: 'center',
             paddingTop: Math.max(i.top, 44) + (isCompact ? 8 : 16),
             paddingBottom: Math.max(i.bottom, 20) + 12,
-            paddingHorizontal: 24,
             justifyContent: 'space-between',
           }}
         >
           {/* Header & Typography Section */}
-          <Animated.View entering={FadeInDown.duration(450)}>
+          <Animated.View
+            entering={FadeInDown.duration(450)}
+            style={{
+              paddingHorizontal: 24,
+              maxWidth: contentMaxWidth,
+              width: '100%',
+              alignSelf: 'center',
+            }}
+          >
             {/* App Logo & Title */}
             <View
               style={{
@@ -103,7 +108,7 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
             </Text>
           </Animated.View>
 
-          {/* Hero 3D Mockup Visual */}
+          {/* Hero 3D Mockup Visual - Edge to edge, utilizing full width and side areas! */}
           <Animated.View
             entering={FadeIn.delay(200).duration(600)}
             style={{
@@ -111,7 +116,8 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
               width: '100%',
               alignItems: 'center',
               justifyContent: 'center',
-              marginVertical: isCompact ? 4 : 12,
+              overflow: 'hidden',
+              marginVertical: isCompact ? 4 : 10,
             }}
           >
             <Image
@@ -119,15 +125,22 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
               style={{
                 width: '100%',
                 height: '100%',
-                maxHeight: isCompact ? 360 : 480,
               }}
-              resizeMode="contain"
+              resizeMode="cover"
               accessibilityLabel="SnapContact preview showing contact extraction, live scanner, and contact profile"
             />
           </Animated.View>
 
           {/* Bottom CTA Button & Home Indicator */}
-          <Animated.View entering={FadeInDown.delay(350).duration(450)}>
+          <Animated.View
+            entering={FadeInDown.delay(350).duration(450)}
+            style={{
+              paddingHorizontal: 24,
+              maxWidth: contentMaxWidth,
+              width: '100%',
+              alignSelf: 'center',
+            }}
+          >
             <PressScale
               testID="get-started"
               accessibilityRole="button"
