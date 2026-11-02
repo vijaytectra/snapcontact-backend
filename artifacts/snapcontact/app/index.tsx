@@ -21,6 +21,7 @@ import { S } from '@/lib/strings';
 import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
 import { Banner, Button, F, PressScale, Skeleton, tap, useInsets } from '@/components/ui';
 import { Onboarding } from '@/components/Onboarding';
+import { TrialAuthScreen } from '@/components/TrialAuthScreen';
 import { CountrySheet } from '@/components/CountrySheet';
 import { SettingsModal } from '@/components/SettingsModal';
 import { SaveSummary } from '@/components/SaveSummary';
@@ -48,6 +49,7 @@ export default function Index() {
   const [dismissed, setDismissed] = useState<unknown>(null);
   const [currentCardIndex, setCurrentCardIndex] = useState(0);
   const [viewMode, setViewMode] = useState<'card' | 'list'>('card');
+  const [onboardingStep, setOnboardingStep] = useState<'intro' | 'auth'>('intro');
   const [searchHistory, setSearchHistory] = useState<string[]>([
     'Vignesh 9876543210',
     'Arjun Kumar +91 98765 43210',
@@ -95,15 +97,39 @@ export default function Index() {
     );
   }
 
-  // Screen 1: Onboarding
+  // Screen 1: Onboarding + Sign in with Email (7-Day Trial) Flow
   if (!cap.onboarded && cap.phase === 'idle' && cap.candidates.length === 0) {
+    if (onboardingStep === 'intro') {
+      return (
+        <>
+          <StatusBar style="light" />
+          <Onboarding
+            onDone={() => {
+              setOnboardingStep('auth');
+            }}
+          />
+        </>
+      );
+    }
+
     return (
       <>
         <StatusBar style="light" />
-        <Onboarding
-          onDone={() => {
+        <TrialAuthScreen
+          isExpired={auth.subscription.status === 'expired'}
+          onLogin={auth.login}
+          onSuccess={() => {
+            setOnboardingStep('intro');
             cap.completeOnboarding();
           }}
+          onSkip={() => {
+            setOnboardingStep('intro');
+            cap.completeOnboarding();
+          }}
+          onBack={() => {
+            setOnboardingStep('intro');
+          }}
+          error={auth.authError}
         />
       </>
     );
@@ -117,6 +143,16 @@ export default function Index() {
   const canSave = selected.length > 0 && selected.every((x) => x.valid) && cap.nativeAvailable && !saving;
   const showSummary = !saving && cap.outcomes.length > 0 && dismissed !== cap.outcomes;
   const allSelected = cap.candidates.length > 0 && cap.candidates.every((x) => x.selected);
+
+  const isExpired = auth.subscription.status === 'expired';
+  const requireActiveSubscription = (action: () => void) => {
+    if (isExpired) {
+      tap('warning');
+      setSubscriptionOpen(true);
+      return;
+    }
+    action();
+  };
 
   const messages = (
     <>
@@ -404,8 +440,10 @@ export default function Index() {
                   accessibilityRole="button"
                   accessibilityLabel="Import Photo"
                   onPress={() => {
-                    tap('medium');
-                    cap.importImage('library');
+                    requireActiveSubscription(() => {
+                      tap('medium');
+                      cap.importImage('library');
+                    });
                   }}
                   style={{
                     width: 62,
@@ -435,8 +473,10 @@ export default function Index() {
                   accessibilityRole="button"
                   accessibilityLabel="Camera"
                   onPress={() => {
-                    tap('medium');
-                    cap.importImage('camera');
+                    requireActiveSubscription(() => {
+                      tap('medium');
+                      cap.importImage('camera');
+                    });
                   }}
                   style={{
                     width: 62,
@@ -466,8 +506,10 @@ export default function Index() {
                   accessibilityRole="button"
                   accessibilityLabel="Quick Capture"
                   onPress={() => {
-                    tap('medium');
-                    void cap.toggleQuickCapture();
+                    requireActiveSubscription(() => {
+                      tap('medium');
+                      void cap.toggleQuickCapture();
+                    });
                   }}
                   style={{
                     width: 62,
@@ -575,10 +617,12 @@ export default function Index() {
               accessibilityLabel="Find Numbers"
               disabled={!cap.text.trim()}
               onPress={() => {
-                if (cap.text.trim()) {
-                  setSearchHistory((prev) => [cap.text.trim(), ...prev.slice(0, 9)]);
-                  cap.processText(cap.text);
-                }
+                requireActiveSubscription(() => {
+                  if (cap.text.trim()) {
+                    setSearchHistory((prev) => [cap.text.trim(), ...prev.slice(0, 9)]);
+                    cap.processText(cap.text);
+                  }
+                });
               }}
               style={{
                 backgroundColor: '#000000',
@@ -729,6 +773,8 @@ export default function Index() {
           onOpenCashfree={() => setCashfreeOpen(true)}
           onToggleAutoRenewal={auth.toggleAutoRenewal}
           userEmail={auth.user?.email}
+          onSimulateExpired={auth.simulateExpiredTrial}
+          onResetTrial={auth.resetTrial}
         />
         <CashfreeModal
           visible={cashfreeOpen}
@@ -1266,6 +1312,8 @@ export default function Index() {
         onOpenCashfree={() => setCashfreeOpen(true)}
         onToggleAutoRenewal={auth.toggleAutoRenewal}
         userEmail={auth.user?.email}
+        onSimulateExpired={auth.simulateExpiredTrial}
+        onResetTrial={auth.resetTrial}
       />
       <CashfreeModal
         visible={cashfreeOpen}

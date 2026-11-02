@@ -18,6 +18,8 @@ export function SubscriptionModal({
   onOpenCashfree,
   onToggleAutoRenewal,
   userEmail,
+  onSimulateExpired,
+  onResetTrial,
 }: {
   visible: boolean;
   onClose: () => void;
@@ -25,6 +27,8 @@ export function SubscriptionModal({
   onOpenCashfree: () => void;
   onToggleAutoRenewal: (enabled: boolean) => Promise<void>;
   userEmail?: string;
+  onSimulateExpired?: () => void;
+  onResetTrial?: () => void;
 }) {
   const c = useColors();
   const i = useInsets();
@@ -397,6 +401,52 @@ export function SubscriptionModal({
                   }}
                 />
               )}
+
+              {/* Developer / Testing: Simulate Expiration & Reset */}
+              {onSimulateExpired && onResetTrial ? (
+                <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+                  <PressScale
+                    testID="simulate-expire-btn"
+                    onPress={() => {
+                      tap();
+                      onSimulateExpired();
+                    }}
+                    style={{
+                      flex: 1,
+                      paddingVertical: 8,
+                      borderRadius: 10,
+                      backgroundColor: c.secondary,
+                      borderWidth: 1,
+                      borderColor: '#EF4444',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <Text style={{ fontFamily: F.m, fontSize: 11, color: '#EF4444' }}>
+                      🧪 Test 7-Day Expired
+                    </Text>
+                  </PressScale>
+                  <PressScale
+                    testID="reset-trial-btn"
+                    onPress={() => {
+                      tap();
+                      onResetTrial();
+                    }}
+                    style={{
+                      flex: 1,
+                      paddingVertical: 8,
+                      borderRadius: 10,
+                      backgroundColor: c.secondary,
+                      borderWidth: 1,
+                      borderColor: '#10B981',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <Text style={{ fontFamily: F.m, fontSize: 11, color: '#10B981' }}>
+                      🔄 Reset 7-Day Trial
+                    </Text>
+                  </PressScale>
+                </View>
+              ) : null}
             </View>
           </ScrollView>
         </View>

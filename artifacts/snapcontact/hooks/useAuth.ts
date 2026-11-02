@@ -175,6 +175,34 @@ export function useAuth() {
     [user]
   );
 
+  const simulateExpiredTrial = useCallback(async (): Promise<void> => {
+    const pastDate = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString();
+    const expiredSub = calculateSubscriptionState({
+      status: 'expired',
+      trialStartDate: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString(),
+      trialEndDate: pastDate,
+      isTrialActive: false,
+    });
+    if (user) {
+      const updatedUser: UserProfile = { ...user, subscription: expiredSub };
+      await storeUser(updatedUser);
+      setUser(updatedUser);
+    } else {
+      setGuestSubscription(expiredSub);
+    }
+  }, [user]);
+
+  const resetTrial = useCallback(async (): Promise<void> => {
+    const freshSub = createDefaultTrialSubscription();
+    if (user) {
+      const updatedUser: UserProfile = { ...user, subscription: freshSub };
+      await storeUser(updatedUser);
+      setUser(updatedUser);
+    } else {
+      setGuestSubscription(freshSub);
+    }
+  }, [user]);
+
   const clearAuthError = useCallback(() => {
     setAuthError(null);
   }, []);
@@ -189,6 +217,8 @@ export function useAuth() {
     logout,
     activateAnnualSubscription,
     toggleAutoRenewal,
+    simulateExpiredTrial,
+    resetTrial,
     clearAuthError,
   };
 }
