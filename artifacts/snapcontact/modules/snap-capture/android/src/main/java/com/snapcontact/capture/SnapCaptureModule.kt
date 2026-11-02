@@ -3,8 +3,8 @@ package com.snapcontact.capture
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
-import android.graphics.BitmapFactory
 import android.net.Uri
+import com.google.mlkit.vision.common.InputImage
 import android.os.Build
 import android.provider.ContactsContract
 import android.provider.Settings
@@ -16,7 +16,6 @@ import expo.modules.kotlin.modules.ModuleDefinition
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import java.io.File
 
 class SnapCaptureModule : Module() {
   companion object {
@@ -166,26 +165,13 @@ class SnapCaptureModule : Module() {
       moduleScope.launch {
         try {
           val uri = Uri.parse(uriString)
-          val inputStream = if (uri.scheme == "file") {
-            File(uri.path ?: uriString).inputStream()
-          } else {
-            context.contentResolver.openInputStream(uri)
-          }
-
-          val bitmap = BitmapFactory.decodeStream(inputStream)
-          inputStream?.close()
-
-          if (bitmap == null) {
-            promise.reject("INVALID_BITMAP", "Failed to decode bitmap from image URI", null)
-            return@launch
-          }
-
-          val text = OcrProcessor.processBitmap(bitmap)
-          bitmap.recycle()
+          // fromFilePath reads EXIF orientation, so rotated camera photos are not recognised sideways.
+          val image = InputImage.fromFilePath(context, uri)
+          val text = OcrProcessor.processImage(image)
           promise.resolve(text)
         } catch (e: Exception) {
           Log.e(TAG, "recognize failed", e)
-          promise.reject("RECOGNIZE_ERROR", e.message, e)
+          promise.reject("RECOGNIZE_ERROR", e.message ?: "Text recognition failed", e)
         }
       }
     }
