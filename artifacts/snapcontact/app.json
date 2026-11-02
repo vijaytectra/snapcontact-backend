@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "SnapContact",
-    "slug": "snapcontact",
+    "slug": "tectra-dev",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -79,8 +79,9 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "703c5056-086f-4700-a845-33e3380fbfde"
+        "projectId": "0cd450dc-14f5-43af-ad5e-055595535b07"
       }
-    }
+    },
+    "owner": "developer23s-team"
   }
 }
