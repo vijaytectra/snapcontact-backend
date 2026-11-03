@@ -50,7 +50,8 @@ export function useCapture() {
     setImageUri(uri);
     if (previous !== uri) void device.deleteTemporaryImage(previous);
     setPhase('processing'); setOcrProgress(0); setError(null); setNotice(null); setOutcomes([]); setCandidates([]); setText('');
-    const MAX_RETRIES = 2;
+    // Retrying cannot help when on-device reading is unavailable (e.g. Expo Go), so fail on the first try.
+    const MAX_RETRIES = device.ocrAvailable ? 2 : 0;
     let lastErr: any = null;
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       if (ticket !== generation.current) { busy.current = false; return; }
@@ -76,6 +77,7 @@ export function useCapture() {
         lastErr = err;
         if (ticket !== generation.current) { busy.current = false; return; }
         if (attempt === MAX_RETRIES) {
+          setNotice(null);
           setError(err instanceof Error ? err.message : R.imageUnreadable);
           setPhase('review');
         }

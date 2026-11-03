@@ -223,8 +223,9 @@ export function Banner({ kind, text, onDismiss, action, testID }: { kind: 'error
       accessibilityRole={err ? 'alert' : undefined}
       accessibilityLiveRegion="polite"
       style={{
-        backgroundColor: err ? 'rgba(239, 68, 68, 0.12)' : c.card,
-        borderColor: err ? 'rgba(239, 68, 68, 0.28)' : c.border,
+        // Errors sit on the light home/review surfaces, so they use dark red text on a pale red fill.
+        backgroundColor: err ? '#FEF2F2' : c.card,
+        borderColor: err ? '#FCA5A5' : c.border,
         borderWidth: 1,
         borderRadius: 16,
         padding: 15,
@@ -235,7 +236,7 @@ export function Banner({ kind, text, onDismiss, action, testID }: { kind: 'error
     >
       <Ionicons name={err ? 'alert-circle' : 'information-circle'} size={22} color={err ? c.destructive : '#A1A1AA'} style={{ marginTop: 1 }} />
       <View style={{ flex: 1, gap: 6 }}>
-        <Text style={{ color: c.foreground, fontFamily: F.m, fontSize: 14, lineHeight: 20 }}>{text}</Text>
+        <Text style={{ color: err ? '#7F1D1D' : c.foreground, fontFamily: F.m, fontSize: 14, lineHeight: 20 }}>{text}</Text>
         {action ? (
           <Pressable
             accessibilityRole="button"
@@ -244,7 +245,7 @@ export function Banner({ kind, text, onDismiss, action, testID }: { kind: 'error
             style={{ minHeight: 36, justifyContent: 'center' }}
             testID={testID ? testID + '-action' : undefined}
           >
-            <Text style={{ color: '#FFFFFF', fontFamily: F.b, fontSize: 14, textDecorationLine: 'underline' }}>{action.label}</Text>
+            <Text style={{ color: err ? '#7F1D1D' : '#FFFFFF', fontFamily: F.b, fontSize: 14, textDecorationLine: 'underline' }}>{action.label}</Text>
           </Pressable>
         ) : null}
       </View>
