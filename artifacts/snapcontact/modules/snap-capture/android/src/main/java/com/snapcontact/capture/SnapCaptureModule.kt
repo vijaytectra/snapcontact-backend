@@ -177,9 +177,6 @@ class SnapCaptureModule : Module() {
         } catch (e: OutOfMemoryError) {
           Log.e(TAG, "recognize ran out of memory", e)
           promise.reject("IMAGE_TOO_LARGE", "This image is too large to read. Try a screenshot or a smaller photo.", null)
-        } catch (e: OcrProcessor.ModelUnavailableException) {
-          Log.e(TAG, "recognize: text model not available", e)
-          promise.reject("MODEL_UNAVAILABLE", e.message, e)
         } catch (e: Exception) {
           Log.e(TAG, "recognize failed", e)
           // Keep the underlying reason visible so a failure on a user's phone can be diagnosed.

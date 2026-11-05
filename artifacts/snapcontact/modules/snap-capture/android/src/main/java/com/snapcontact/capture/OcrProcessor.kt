@@ -2,12 +2,10 @@ package com.snapcontact.capture
 
 import android.graphics.Bitmap
 import android.util.Log
-import com.google.mlkit.common.MlKitException
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -18,32 +16,8 @@ object OcrProcessor {
     TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
   }
 
-  // Play Services downloads the text model on first use; until then process() fails with
-  // UNAVAILABLE. Wait for it rather than failing the user's first scan.
-  private const val MODEL_WAIT_STEP_MS = 2_000L
-  private const val MODEL_WAIT_ATTEMPTS = 12
-
-  suspend fun processBitmap(bitmap: Bitmap, rotationDegrees: Int = 0): String {
-    val image = InputImage.fromBitmap(bitmap, rotationDegrees)
-    var attempt = 0
-    while (true) {
-      try {
-        return processImage(image)
-      } catch (e: IllegalStateException) {
-        val modelMissing = (e.cause as? MlKitException)?.errorCode == MlKitException.UNAVAILABLE
-        if (!modelMissing) throw e
-        if (++attempt >= MODEL_WAIT_ATTEMPTS) {
-          throw ModelUnavailableException()
-        }
-        Log.d(TAG, "Text model not downloaded yet, waiting (attempt $attempt)")
-        delay(MODEL_WAIT_STEP_MS)
-      }
-    }
-  }
-
-  class ModelUnavailableException : Exception(
-    "The text reader is still downloading. Stay connected to the internet and try again in a minute."
-  )
+  suspend fun processBitmap(bitmap: Bitmap, rotationDegrees: Int = 0): String =
+    processImage(InputImage.fromBitmap(bitmap, rotationDegrees))
 
   // Failures are thrown, not turned into empty text, so callers can show the real reason
   // instead of "No readable text found".

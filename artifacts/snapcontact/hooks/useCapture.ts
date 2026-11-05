@@ -51,7 +51,7 @@ export function useCapture() {
     if (previous !== uri) void device.deleteTemporaryImage(previous);
     setPhase('processing'); setOcrProgress(0); setError(null); setNotice(null); setOutcomes([]); setCandidates([]); setText('');
     // Retrying cannot help when on-device reading is unavailable (e.g. Expo Go), so fail on the first try.
-    const MAX_RETRIES = device.ocrAvailable ? 2 : 0;
+    const MAX_RETRIES = device.ocrAvailable ? 1 : 0;
     let lastErr: any = null;
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       if (ticket !== generation.current) { busy.current = false; return; }
@@ -76,10 +76,15 @@ export function useCapture() {
       } catch (err) {
         lastErr = err;
         if (ticket !== generation.current) { busy.current = false; return; }
-        if (attempt === MAX_RETRIES) {
+        // These native errors come out the same on every try, so show them now
+        // instead of making the user sit through retries.
+        const code = (err as { code?: string } | null)?.code;
+        const final = attempt === MAX_RETRIES || code === 'INVALID_IMAGE' || code === 'IMAGE_TOO_LARGE';
+        if (final) {
           setNotice(null);
           setError(err instanceof Error ? err.message : R.imageUnreadable);
           setPhase('review');
+          break;
         }
       }
     }
