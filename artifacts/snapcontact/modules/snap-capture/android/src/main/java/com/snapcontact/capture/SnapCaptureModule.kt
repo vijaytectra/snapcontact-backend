@@ -4,7 +4,6 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import com.google.mlkit.vision.common.InputImage
 import android.os.Build
 import android.provider.ContactsContract
 import android.provider.Settings
@@ -164,14 +163,23 @@ class SnapCaptureModule : Module() {
     AsyncFunction("recognize") { uriString: String, promise: Promise ->
       moduleScope.launch {
         try {
-          val uri = Uri.parse(uriString)
-          // fromFilePath reads EXIF orientation, so rotated camera photos are not recognised sideways.
-          val image = InputImage.fromFilePath(context, uri)
-          val text = OcrProcessor.processImage(image)
-          promise.resolve(text)
+          // We decode the image and read its EXIF rotation ourselves (see ImageLoader):
+          // ML Kit's InputImage.fromFilePath crashed on some URIs with a null getClass() error.
+          val loaded = ImageLoader.load(context, Uri.parse(uriString))
+          try {
+            promise.resolve(OcrProcessor.processBitmap(loaded.bitmap, loaded.rotationDegrees))
+          } finally {
+            loaded.bitmap.recycle()
+          }
+        } catch (e: IllegalArgumentException) {
+          Log.e(TAG, "recognize could not open image", e)
+          promise.reject("INVALID_IMAGE", e.message ?: "Could not open this image.", e)
+        } catch (e: OutOfMemoryError) {
+          Log.e(TAG, "recognize ran out of memory", e)
+          promise.reject("IMAGE_TOO_LARGE", "This image is too large to read. Try a screenshot or a smaller photo.", null)
         } catch (e: Exception) {
           Log.e(TAG, "recognize failed", e)
-          promise.reject("RECOGNIZE_ERROR", e.message ?: "Text recognition failed", e)
+          promise.reject("RECOGNIZE_ERROR", "Could not read text from this image. Please try again.", e)
         }
       }
     }

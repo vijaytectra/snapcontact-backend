@@ -16,7 +16,8 @@ object OcrProcessor {
     TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
   }
 
-  suspend fun processBitmap(bitmap: Bitmap): String = processImage(InputImage.fromBitmap(bitmap, 0))
+  suspend fun processBitmap(bitmap: Bitmap, rotationDegrees: Int = 0): String =
+    processImage(InputImage.fromBitmap(bitmap, rotationDegrees))
 
   // Failures are thrown, not turned into empty text, so callers can show the real reason
   // instead of "No readable text found".
