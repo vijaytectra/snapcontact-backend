@@ -153,8 +153,10 @@ export default function Index() {
         <TrialAuthScreen
           isExpired={auth.subscription.status === 'expired'}
           onLogin={auth.login}
+          onCheckEmail={auth.checkEmail}
           onRequestOtp={auth.requestOtp}
           onVerifyOtp={auth.verifyOtp}
+          onGoogleIdToken={auth.signInWithGoogle}
           onSuccess={() => {
             setPaymentVerifyOpen(false);
             setOnboardingStep('intro');

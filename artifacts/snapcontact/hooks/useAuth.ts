@@ -49,17 +49,50 @@ export function useAuth() {
     ? user.subscription
     : guestSubscription;
 
-  const requestOtp = useCallback(async (email: string): Promise<boolean> => {
-    if (busyRef.current) return false;
-    busyRef.current = true;
+  // Saves a server session (tokens + profile) and signs the user in on this device.
+  const applySession = useCallback(async (data: any) => {
+    const profile: UserProfile = {
+      id: data.user.id,
+      email: data.user.email,
+      name: data.user.name,
+      createdAt: new Date().toISOString(),
+      subscription: data.user.subscription || createDefaultTrialSubscription(),
+    };
+    // SecureStore is unavailable on web; the profile alone keeps the user signed in there.
+    await SecureStore.setItemAsync('snapcontact.token.v1', data.token).catch(() => {});
+    if (data.refreshToken) await SecureStore.setItemAsync('snapcontact.refresh.v1', data.refreshToken).catch(() => {});
+    await storeUser(profile);
+    setUser(profile);
+  }, []);
+
+  /** Google-style first step: does an account exist for this email? null when the check failed. */
+  const checkEmail = useCallback(async (email: string): Promise<boolean | null> => {
+    setAuthError(null);
+    const cleanEmail = email.trim();
+    if (!cleanEmail || !isValidEmail(cleanEmail)) {
+      setAuthError('Please enter a valid email address.');
+      return null;
+    }
+    try {
+      const data = await apiFetch('/auth/check-email', { method: 'POST', body: JSON.stringify({ email: cleanEmail }) });
+      return !!data.exists;
+    } catch (e: any) {
+      setAuthError(e?.message || 'Could not reach the server. Check your connection and try again.');
+      return null;
+    }
+  }, []);
+
+  const requestOtp = useCallback(async (email: string, mode?: 'signin' | 'signup'): Promise<boolean> => {
     setAuthError(null);
     const cleanEmail = email.trim();
     if (!cleanEmail || !isValidEmail(cleanEmail)) {
       setAuthError('Please enter a valid email address.');
       return false;
     }
+    if (busyRef.current) return false;
+    busyRef.current = true;
     try {
-      await apiFetch('/auth/request-otp', { method: 'POST', body: JSON.stringify({ email: cleanEmail }) });
+      await apiFetch('/auth/request-otp', { method: 'POST', body: JSON.stringify({ email: cleanEmail, mode }) });
       return true;
     } catch (e: any) {
       setAuthError(e?.message || 'Failed to send code');
@@ -68,6 +101,23 @@ export function useAuth() {
       busyRef.current = false;
     }
   }, []);
+
+  /** Signs in with the ID token from Google's sign-in sheet. Creates the account on first use. */
+  const signInWithGoogle = useCallback(async (idToken: string): Promise<boolean> => {
+    if (busyRef.current) return false;
+    busyRef.current = true;
+    setAuthError(null);
+    try {
+      const data = await apiFetch('/auth/google', { method: 'POST', body: JSON.stringify({ idToken }) });
+      await applySession(data);
+      return true;
+    } catch (e: any) {
+      setAuthError(e?.message || 'Google sign-in failed. Please try again.');
+      return false;
+    } finally {
+      busyRef.current = false;
+    }
+  }, [applySession]);
 
   const verifyLink = useCallback(async (email: string, token: string): Promise<boolean> => {
     if (busyRef.current) return false;
@@ -95,24 +145,14 @@ export function useAuth() {
     }
   }, []);
 
-  const verifyOtp = useCallback(async (email: string, otp: string): Promise<boolean> => {
+  const verifyOtp = useCallback(async (email: string, otp: string, name?: string): Promise<boolean> => {
     if (busyRef.current) return false;
     busyRef.current = true;
     setAuthError(null);
     const cleanEmail = email.trim();
     try {
-      const data = await apiFetch('/auth/verify-otp', { method: 'POST', body: JSON.stringify({ email: cleanEmail, otp }) });
-      const profile: UserProfile = {
-        id: data.user.id,
-        email: data.user.email,
-        name: data.user.name,
-        createdAt: new Date().toISOString(),
-        subscription: data.user.subscription || createDefaultTrialSubscription(),
-      };
-      await SecureStore.setItemAsync('snapcontact.token.v1', data.token);
-      if (data.refreshToken) await SecureStore.setItemAsync('snapcontact.refresh.v1', data.refreshToken);
-      await storeUser(profile);
-      setUser(profile);
+      const data = await apiFetch('/auth/verify-otp', { method: 'POST', body: JSON.stringify({ email: cleanEmail, otp, name }) });
+      await applySession(data);
       return true;
     } catch (e: any) {
       setAuthError(e?.message || 'Invalid code');
@@ -120,7 +160,7 @@ export function useAuth() {
     } finally {
       busyRef.current = false;
     }
-  }, []);
+  }, [applySession]);
 
   const login = useCallback(
     async (email: string, _password?: string): Promise<boolean> => {
@@ -352,8 +392,10 @@ export function useAuth() {
     authError,
     login,
     signup,
+    checkEmail,
     requestOtp,
     verifyOtp,
+    signInWithGoogle,
     verifyLink,
     logout,
     activateAnnualSubscription,

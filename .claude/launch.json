@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "api-server",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "cd artifacts/api-server && pnpm run build && PORT=5050 node --env-file=.env --enable-source-maps ./dist/index.mjs"],
+      "port": 5050
+    },
+    {
+      "name": "snapcontact-web",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "cd artifacts/snapcontact && EXPO_PUBLIC_API_URL=http://localhost:5050/api pnpm exec expo start --web --port 8081"],
+      "port": 8081
+    }
+  ]
+}
