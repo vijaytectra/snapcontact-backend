@@ -40,3 +40,10 @@ test('OCR is bundled for offline-first use, not downloaded by Play Services', ()
   assert.ok(gradle.includes('com.google.mlkit:text-recognition:'));
   assert.ok(!gradle.includes('play-services-mlkit'));
 });
+test('release builds keep ML Kit classes so R8 cannot break on-device OCR', () => {
+  const gradle = fs.readFileSync(new URL('../modules/snap-capture/android/build.gradle', import.meta.url), 'utf8');
+  const rules = fs.readFileSync(new URL('../modules/snap-capture/android/proguard-rules.pro', import.meta.url), 'utf8');
+  assert.ok(gradle.includes("consumerProguardFiles 'proguard-rules.pro'"));
+  assert.ok(rules.includes('-keep class com.google.mlkit.** { *; }'));
+  assert.ok(rules.includes('-keep class com.google.android.gms.internal.mlkit_** { *; }'));
+});

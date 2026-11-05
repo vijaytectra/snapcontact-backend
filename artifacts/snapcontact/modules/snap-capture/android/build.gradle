@@ -11,6 +11,8 @@ android {
   defaultConfig {
     versionCode 1
     versionName "1.0.0"
+    // Applied to the app's release build so R8 doesn't break ML Kit (see the file).
+    consumerProguardFiles 'proguard-rules.pro'
   }
 }
 
