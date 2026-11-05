@@ -8,6 +8,12 @@
       "port": 5050
     },
     {
+      "name": "snapcontact-expo-go",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "cd artifacts/snapcontact && EXPO_PUBLIC_API_URL=http://$(ipconfig getifaddr en0 || ipconfig getifaddr en1):5050/api pnpm exec expo start --lan --port 8082"],
+      "port": 8082
+    },
+    {
       "name": "snapcontact-web",
       "runtimeExecutable": "sh",
       "runtimeArgs": ["-c", "cd artifacts/snapcontact && EXPO_PUBLIC_API_URL=http://localhost:5050/api pnpm exec expo start --web --port 8081"],

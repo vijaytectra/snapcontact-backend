@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -55,6 +56,16 @@ export function TrialAuthScreen({
   const [showServerError, setShowServerError] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  // The server sleeps when idle on free hosting and can take up to a minute to wake.
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    if (!loading) {
+      setSlow(false);
+      return;
+    }
+    const t = setTimeout(() => setSlow(true), 5000);
+    return () => clearTimeout(t);
+  }, [loading]);
 
   const shownError = localError || (showServerError ? error : null);
   const cleanEmail = email.trim();
@@ -215,6 +226,12 @@ export function TrialAuthScreen({
               {shownError ? (
                 <View testID="trial-auth-error" style={{ backgroundColor: 'rgba(239,68,68,0.15)', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: 'rgba(239,68,68,0.3)' }}>
                   <Text style={{ color: '#FCA5A5', fontSize: 14 }}>{shownError}</Text>
+                </View>
+              ) : null}
+              {slow ? (
+                <View testID="trial-auth-slow" style={{ flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: 'rgba(138,180,248,0.12)', borderRadius: 12, padding: 12, borderWidth: 1, borderColor: 'rgba(138,180,248,0.3)' }}>
+                  <ActivityIndicator color="#8AB4F8" />
+                  <Text style={{ color: '#D2E3FC', fontSize: 14, flex: 1 }}>Waking up the server… the first sign-in can take up to a minute.</Text>
                 </View>
               ) : null}
               {notice ? (

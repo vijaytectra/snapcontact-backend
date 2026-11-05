@@ -10,7 +10,7 @@ import {
   isValidEmail,
   storeUser,
 } from '@/lib/auth';
-import { apiFetch } from '@/lib/api';
+import { ApiError, apiFetch } from '@/lib/api';
 import { CashfreePaymentResult } from '@/lib/cashfree';
 
 export function useAuth() {
@@ -77,6 +77,9 @@ export function useAuth() {
       const data = await apiFetch('/auth/check-email', { method: 'POST', body: JSON.stringify({ email: cleanEmail }) });
       return !!data.exists;
     } catch (e: any) {
+      // Older server without /auth/check-email: go straight to the code step. Those servers
+      // sign in existing users and create new ones when the code is verified.
+      if (e instanceof ApiError && e.status === 404 && !e.code) return true;
       setAuthError(e?.message || 'Could not reach the server. Check your connection and try again.');
       return null;
     }
