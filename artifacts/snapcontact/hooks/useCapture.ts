@@ -152,6 +152,17 @@ export function useCapture() {
     return () => { appSub.remove(); urlSub.remove(); };
   }, [ready, imageUri, processImage, handleCapturedText]);
 
+  // Android can kill the app while the camera is open (low memory). The photo then arrives
+  // after the restart instead of from launchCameraAsync, so pick it up here.
+  useEffect(() => {
+    if (!ready || Platform.OS !== 'android') return;
+    ImagePicker.getPendingResultAsync().then(result => {
+      if (!result || !('assets' in result) || result.canceled || !result.assets?.[0]) return;
+      if (busy.current) return;
+      void processImage(result.assets[0].uri);
+    }).catch(() => { /* nothing pending */ });
+  }, [ready, processImage]);
+
   useEffect(() => {
     if (!device.quickCaptureAvailable) return;
     setQuickCaptureActive(device.isQuickCaptureRunning());
