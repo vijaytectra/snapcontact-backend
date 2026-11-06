@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { normalizeUsername } from './username';
 
 /**
  * Email sign-in rules, kept free of Express and the database so they can be tested directly:
@@ -15,6 +16,8 @@ import crypto from 'node:crypto';
 export type AuthUser = {
   id: string;
   email: string;
+  /** Lower-cased; only accounts created through the username sign-up have one. */
+  username?: string | null;
   name: string;
   passwordHash: string;
   salt: string;
@@ -27,6 +30,7 @@ export type AuthVerification = { email: string; otpHash: string; salt: string; e
 
 export type AuthStore = {
   findUserByEmail(email: string): Promise<AuthUser | undefined>;
+  findUserByUsername(username: string): Promise<AuthUser | undefined>;
   findUserById(id: string): Promise<AuthUser | undefined>;
   insertUser(user: AuthUser): Promise<void>;
   updateUser(id: string, patch: Partial<AuthUser>): Promise<void>;
@@ -72,6 +76,7 @@ const SET_PASSWORD_WINDOW_MS = 15 * 60 * 1000;
 
 const BAD_CODE = 'That code is incorrect or has expired. Request a new code and try again.';
 const BAD_LOGIN = 'Incorrect email or password.';
+const BAD_LOGIN_USERNAME = 'Incorrect username or password.';
 
 export function createAuthFlow(deps: AuthDeps) {
   const { store, mailer } = deps;
@@ -207,6 +212,30 @@ export function createAuthFlow(deps: AuthDeps) {
         const prev = lock && lock.until > now() ? lock.count : 0;
         loginFailures.set(k, { count: prev + 1, until: now() + LOGIN_LOCK_MS });
         throw new AuthError(401, BAD_LOGIN, 'BAD_LOGIN');
+      }
+      loginFailures.delete(k);
+      return startSession(user, 'password');
+    },
+
+    /**
+     * Signs in with the username chosen at sign-up. An unverified sign-up has no users row, so it
+     * gets the same "incorrect" answer as a wrong password. Same lock-out rules as email sign-in.
+     */
+    async loginWithUsername(username: string, password: string) {
+      const name = normalizeUsername(username);
+      const k = `username:${name}`;
+      const lock = loginFailures.get(k);
+      if (lock && lock.until > now() && lock.count >= MAX_LOGIN_FAILURES) {
+        throw new AuthError(429, 'Too many failed sign-in attempts. Try again in 15 minutes.', 'LOGIN_LOCKED');
+      }
+      const user = await store.findUserByUsername(name);
+      const ok = user
+        ? user.verified === true && password.length > 0 && deps.verifyPassword(password, user.salt, user.passwordHash)
+        : (deps.verifyPassword(password, dummy.salt, dummy.hash), false);
+      if (!user || !ok) {
+        const prev = lock && lock.until > now() ? lock.count : 0;
+        loginFailures.set(k, { count: prev + 1, until: now() + LOGIN_LOCK_MS });
+        throw new AuthError(401, BAD_LOGIN_USERNAME, 'BAD_LOGIN');
       }
       loginFailures.delete(k);
       return startSession(user, 'password');

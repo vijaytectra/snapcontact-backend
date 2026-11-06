@@ -1,6 +1,8 @@
-import { and, desc, eq, ne, sql } from 'drizzle-orm';
-import { db, pool, usersTable, verificationsTable, ordersTable, paymentEventsTable } from '@workspace/db';
+import { and, desc, eq, lt, ne, sql } from 'drizzle-orm';
+import { db, pool, usersTable, verificationsTable, ordersTable, paymentEventsTable, pendingRegistrationsTable } from '@workspace/db';
 import { activatePlan, describeSubscription, type Plan, type PlanId } from './subscription';
+import { normalizeUsername } from './username';
+import type { RegistrationRow } from './signupFlow';
 import type { User, Verification, Order } from '@workspace/db';
 
 export type StoredUser = User;
@@ -50,6 +52,27 @@ export async function ensureSchema() {
       payment_status text NOT NULL,
       received_at timestamptz NOT NULL
     );
+    -- Username sign-up (safe to run repeatedly on existing databases).
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS username text;
+    CREATE UNIQUE INDEX IF NOT EXISTS users_username_key ON users (username);
+    CREATE TABLE IF NOT EXISTS pending_registrations (
+      id text PRIMARY KEY,
+      username text NOT NULL,
+      password_hash text NOT NULL,
+      salt text NOT NULL,
+      password_sealed text,
+      email text,
+      otp_hash text,
+      otp_salt text,
+      otp_expires_at timestamptz,
+      otp_attempts integer NOT NULL DEFAULT 0,
+      code_sent_at timestamptz,
+      status text NOT NULL,
+      user_id text,
+      created_at timestamptz NOT NULL,
+      expires_at timestamptz NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS pending_registrations_username_key ON pending_registrations (username);
   `);
 }
 
@@ -66,8 +89,60 @@ export async function findUserById(id: string) {
   const [u] = await db.select().from(usersTable).where(eq(usersTable.id, id));
   return u;
 }
+export async function findUserByUsername(username: string) {
+  const [u] = await db.select().from(usersTable).where(eq(usersTable.username, normalizeUsername(username)));
+  return u;
+}
 export async function insertUser(user: StoredUser) {
   await db.insert(usersTable).values(user);
+}
+
+// Username sign-up: see signupFlow.ts for what each call is for.
+export async function findRegistration(id: string) {
+  const [r] = await db.select().from(pendingRegistrationsTable).where(eq(pendingRegistrationsTable.id, id));
+  return r;
+}
+export async function findRegistrationByUsername(username: string) {
+  const [r] = await db.select().from(pendingRegistrationsTable).where(eq(pendingRegistrationsTable.username, normalizeUsername(username)));
+  return r;
+}
+export async function createRegistration(row: RegistrationRow) {
+  await db.insert(pendingRegistrationsTable).values(row);
+}
+export async function updateRegistration(id: string, patch: Partial<RegistrationRow>) {
+  await db.update(pendingRegistrationsTable).set(patch).where(eq(pendingRegistrationsTable.id, id));
+}
+export async function incrementOtpAttempts(id: string): Promise<number> {
+  const [row] = await db.update(pendingRegistrationsTable)
+    .set({ otpAttempts: sql`${pendingRegistrationsTable.otpAttempts} + 1` })
+    .where(eq(pendingRegistrationsTable.id, id))
+    .returning({ attempts: pendingRegistrationsTable.otpAttempts });
+  return row?.attempts ?? 0;
+}
+export async function consumeOtp(id: string, otpHash: string): Promise<boolean> {
+  const rows = await db.update(pendingRegistrationsTable)
+    .set({ otpHash: null, otpSalt: null, otpExpiresAt: null })
+    .where(and(
+      eq(pendingRegistrationsTable.id, id),
+      eq(pendingRegistrationsTable.otpHash, otpHash),
+      eq(pendingRegistrationsTable.status, 'AWAITING_CODE'),
+    ))
+    .returning({ id: pendingRegistrationsTable.id });
+  return rows.length > 0;
+}
+export async function activateRegistration(id: string, user: StoredUser) {
+  await db.transaction(async (tx) => {
+    await tx.insert(usersTable).values(user);
+    await tx.update(pendingRegistrationsTable)
+      .set({ status: 'VERIFIED', userId: user.id })
+      .where(eq(pendingRegistrationsTable.id, id));
+  });
+}
+export async function deleteRegistration(id: string) {
+  await db.delete(pendingRegistrationsTable).where(eq(pendingRegistrationsTable.id, id));
+}
+export async function deleteExpiredRegistrations(nowIso: string) {
+  await db.delete(pendingRegistrationsTable).where(lt(pendingRegistrationsTable.expiresAt, nowIso));
 }
 export async function updateUser(id: string, patch: Partial<StoredUser>) {
   await db.update(usersTable).set(patch).where(eq(usersTable.id, id));

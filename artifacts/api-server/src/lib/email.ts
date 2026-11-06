@@ -54,6 +54,26 @@ export async function sendOtpEmail(to: string, otp: string) {
   });
 }
 
+const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
+
+/** The username and password, sent once after the sign-up's email is confirmed. */
+export async function sendCredentialsEmail(to: string, username: string, password: string) {
+  await deliver({
+    to,
+    subject: 'Your SnapContact login details',
+    text: `Your SnapContact account is ready.\n\nUsername: ${username}\nPassword: ${password}\n\nKeep this email somewhere safe. If you did not create this account, ignore this email.`,
+    html: `<div style="font-family:sans-serif;max-width:480px;margin:auto">
+      <h2>SnapContact</h2>
+      <p>Your account is ready. Keep these login details safe:</p>
+      <table style="font-size:16px;padding:8px 0">
+        <tr><td style="padding:4px 16px 4px 0;color:#666">Username</td><td style="font-weight:bold">${escapeHtml(username)}</td></tr>
+        <tr><td style="padding:4px 16px 4px 0;color:#666">Password</td><td style="font-weight:bold">${escapeHtml(password)}</td></tr>
+      </table>
+      <p style="font-size:12px;color:#666">If you did not create this account, ignore this email.</p>
+    </div>`,
+  });
+}
+
 export async function sendMagicLinkEmail(to: string, link: string) {
   await deliver({
     to,

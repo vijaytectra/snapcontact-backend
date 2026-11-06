@@ -3,6 +3,8 @@ import { pgTable, text, boolean, integer, jsonb, timestamp, index, uniqueIndex }
 export const usersTable = pgTable("users", {
   id: text("id").primaryKey(),
   email: text("email").notNull().unique(),
+  // Set for accounts created with a username and password. Lower-cased. Older accounts have none.
+  username: text("username"),
   name: text("name").notNull(),
   passwordHash: text("password_hash").notNull(),
   salt: text("salt").notNull(),
@@ -10,7 +12,32 @@ export const usersTable = pgTable("users", {
   verified: boolean("verified").notNull().default(false),
   refreshToken: text("refresh_token"),
   subscription: jsonb("subscription"),
-});
+}, (t) => [
+  uniqueIndex("users_username_key").on(t.username),
+]);
+
+// A username sign-up waiting for its email to be verified. Becomes a users row only when the
+// code is confirmed, so an unverified account can never sign in. Expires if never verified.
+export const pendingRegistrationsTable = pgTable("pending_registrations", {
+  id: text("id").primaryKey(),
+  username: text("username").notNull(),
+  passwordHash: text("password_hash").notNull(),
+  salt: text("salt").notNull(),
+  // The password encrypted with the server key, kept only until the credentials email is sent.
+  passwordSealed: text("password_sealed"),
+  email: text("email"),
+  otpHash: text("otp_hash"),
+  otpSalt: text("otp_salt"),
+  otpExpiresAt: timestamp("otp_expires_at", { withTimezone: true, mode: "string" }),
+  otpAttempts: integer("otp_attempts").notNull().default(0),
+  codeSentAt: timestamp("code_sent_at", { withTimezone: true, mode: "string" }),
+  status: text("status").$type<"AWAITING_EMAIL" | "AWAITING_CODE" | "VERIFIED">().notNull(),
+  userId: text("user_id"),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true, mode: "string" }).notNull(),
+}, (t) => [
+  uniqueIndex("pending_registrations_username_key").on(t.username),
+]);
 
 // One pending OTP / magic link per email address.
 export const verificationsTable = pgTable("verifications", {

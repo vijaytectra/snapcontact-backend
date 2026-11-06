@@ -56,9 +56,41 @@ export function resolveCashfreeConfig(env: Env = process.env): CashfreeConfig | 
   };
 }
 
+/**
+ * Key that encrypts a password between sign-up and its credentials email (see sealedText.ts).
+ * Returns null when unset. Production then disables username sign-up instead of storing anything in clear.
+ */
+export function resolveCredentialKey(env: Env = process.env): Buffer | null {
+  const raw = (env.CREDENTIAL_KEY ?? '').trim();
+  if (!raw) return null;
+  const key = Buffer.from(raw, 'base64');
+  if (key.length !== 32) {
+    throw new Error('CREDENTIAL_KEY must be 32 random bytes, base64-encoded. Create one with: openssl rand -base64 32');
+  }
+  return key;
+}
+
+let credentialKey: Buffer | null | undefined;
+export function getCredentialKey(): Buffer | null {
+  if (credentialKey === undefined) {
+    const key = resolveCredentialKey();
+    if (!key && !isProduction()) {
+      console.warn('CREDENTIAL_KEY is not set: using a random development key. Pending sign-ups end when the server restarts.');
+      credentialKey = crypto.randomBytes(32);
+    } else {
+      credentialKey = key;
+    }
+  }
+  return credentialKey;
+}
+
 /** Checks required settings at startup so a misconfigured deploy fails loudly, not at first sign-in. */
 export function assertServerConfig(env: Env = process.env) {
   resolveTokenSecret(env);
+  resolveCredentialKey(env);
+  if (isProduction(env) && !env.CREDENTIAL_KEY) {
+    console.warn('CREDENTIAL_KEY is not set: username sign-up is disabled until it is added.');
+  }
   if (isProduction(env) && !env.DATABASE_URL) throw new Error('DATABASE_URL is not set.');
   if (isProduction(env) && !resolveCashfreeConfig(env)) {
     console.warn('Cashfree is not configured (CASHFREE_APP_ID, CASHFREE_SECRET_KEY, CASHFREE_ENV). Payments are disabled.');

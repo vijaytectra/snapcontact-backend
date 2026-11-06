@@ -1,17 +1,23 @@
 import { Router, Request, Response, NextFunction } from 'express';
-import { findUserByEmail, findUserById, insertUser, updateUser, saveVerification, findVerification, deleteVerification } from '../lib/storage';
+import {
+  findUserByEmail, findUserById, insertUser, updateUser, saveVerification, findVerification, deleteVerification,
+  findUserByUsername, findRegistration, findRegistrationByUsername, createRegistration, updateRegistration,
+  incrementOtpAttempts, consumeOtp, activateRegistration, deleteRegistration, deleteExpiredRegistrations,
+} from '../lib/storage';
 import { hashPassword, verifyPassword, createToken, verifyToken, isValidEmail } from '../lib/auth';
-import { sendOtpEmail, sendMagicLinkEmail } from '../lib/email';
+import { sendOtpEmail, sendMagicLinkEmail, sendCredentialsEmail } from '../lib/email';
 import { rateLimit } from '../lib/rateLimit';
 import { verifyGoogleIdToken } from '../lib/google';
 import { AuthError, createAuthFlow } from '../lib/authFlow';
+import { createSignupFlow } from '../lib/signupFlow';
+import { openWith, requireCredentialKey, sealWith } from '../lib/sealedText';
 import { describeSubscription } from '../lib/subscription';
 import { requireUser, type AuthedRequest } from '../lib/session';
 
 const router: Router = Router();
 
 const flow = createAuthFlow({
-  store: { findUserByEmail, findUserById, insertUser, updateUser, saveVerification, findVerification, deleteVerification },
+  store: { findUserByEmail, findUserByUsername, findUserById, insertUser, updateUser, saveVerification, findVerification, deleteVerification },
   mailer: { sendOtp: sendOtpEmail, sendMagicLink: sendMagicLinkEmail },
   hashPassword, verifyPassword, createToken, verifyToken,
   describeSubscription: (user, now) => describeSubscription(user.subscription, user.createdAt, now),
@@ -97,12 +103,55 @@ router.post('/google', handle(async (req, res) => {
   return res.json({ ...(await flow.startSession(user, 'google')), needsPassword: false });
 }));
 
+// Username sign-up. Each step is one request. The account exists only after the emailed code is
+// confirmed, so an unverified sign-up cannot log in.
+const signupFlow = createSignupFlow({
+  store: {
+    findUserByEmail, findUserByUsername, findRegistration, findRegistrationByUsername, createRegistration,
+    updateRegistration, incrementOtpAttempts, consumeOtp, activateRegistration, deleteRegistration, deleteExpiredRegistrations,
+  },
+  mailer: { sendOtp: sendOtpEmail, sendCredentials: sendCredentialsEmail },
+  hashPassword,
+  seal: (plain) => sealWith(plain, requireCredentialKey()),
+  open: (sealed) => openWith(sealed, requireCredentialKey()),
+});
+const registrationIdOf = (req: Request) => (typeof req.body?.registrationId === 'string' ? req.body.registrationId : '');
+
+// Step 1: choose a username and password. Nothing is signed in yet.
+router.post('/register', handle(async (req, res) => {
+  if (!rateLimit(`register-ip:${ipOf(req)}`, 10, 60000)) return res.status(429).json(TOO_MANY);
+  return res.status(201).json(await signupFlow.register(req.body?.username, req.body?.password));
+}));
+
+// Step 2: send a verification code to the email address. Repeats are limited by a 60-second cooldown.
+router.post('/register/email', handle(async (req, res) => {
+  if (!rateLimit(`register-email-ip:${ipOf(req)}`, 10, 60000)) return res.status(429).json(TOO_MANY);
+  return res.json(await signupFlow.requestCode(registrationIdOf(req), req.body?.email));
+}));
+
+// Step 3: confirm the code. Creates the account and emails the username and password.
+router.post('/register/verify', handle(async (req, res) => {
+  if (!rateLimit(`register-verify-ip:${ipOf(req)}`, 20, 60000)) return res.status(429).json(TOO_MANY);
+  return res.json(await signupFlow.verifyCode(registrationIdOf(req), String(req.body?.otp ?? '')));
+}));
+
+// Re-sends the credentials email after it failed. Works only while the sign-up is still pending.
+router.post('/register/resend-credentials', handle(async (req, res) => {
+  if (!rateLimit(`register-email-ip:${ipOf(req)}`, 10, 60000)) return res.status(429).json(TOO_MANY);
+  return res.json(await signupFlow.resendCredentials(registrationIdOf(req)));
+}));
+
+// Signs in with a username and password (accounts from /register), or with an email and password.
 router.post('/login', handle(async (req, res) => {
+  const password = typeof req.body?.password === 'string' ? req.body.password : '';
+  if (typeof req.body?.username === 'string') {
+    if (!rateLimit(`login-ip:${ipOf(req)}`, 30, 60000)) return res.status(429).json(TOO_MANY);
+    return res.json(await flow.loginWithUsername(req.body.username, password));
+  }
   const email = emailOf(req);
-  const password = req.body?.password;
   if (!email) return res.status(400).json({ error: 'Invalid email' });
   if (!rateLimit(`login-ip:${ipOf(req)}`, 30, 60000)) return res.status(429).json(TOO_MANY);
-  return res.json(await flow.loginWithPassword(email, typeof password === 'string' ? password : ''));
+  return res.json(await flow.loginWithPassword(email, password));
 }));
 
 // Creates the password after the first code, or sets a new one after "forgot password".
