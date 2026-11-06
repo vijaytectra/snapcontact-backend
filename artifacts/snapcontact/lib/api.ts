@@ -16,31 +16,46 @@ export class ApiError extends Error {
   }
 }
 
+// A dropped connection (flaky mobile data, Wi-Fi waking up, a server restarting) usually
+// succeeds a moment later, so retry those before telling the user. Timeouts are not retried:
+// the server already had a full minute.
+const RETRY_DELAYS_MS = [1500, 3000];
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 export async function apiFetch(path: string, options: RequestInit = {}) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
-  let res: Response;
-  try {
-    res = await fetch(`${BASE}${path}`, {
-      ...options,
-      signal: controller.signal,
-      headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
-    });
-  } catch (e: any) {
-    throw new ApiError(
-      e?.name === 'AbortError'
-        ? 'The server is taking too long to respond. Please try again in a moment.'
-        : 'Could not reach the server. Check your internet connection and try again.',
-      0,
-    );
-  } finally {
-    clearTimeout(timer);
+  let res: Response | undefined;
+  for (let attempt = 0; ; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    try {
+      res = await fetch(`${BASE}${path}`, {
+        ...options,
+        signal: controller.signal,
+        headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+      });
+      break;
+    } catch (e: any) {
+      if (e?.name === 'AbortError') {
+        throw new ApiError('The server is taking too long to respond. Please try again in a moment.', 0);
+      }
+      if (attempt >= RETRY_DELAYS_MS.length) {
+        throw new ApiError('Could not reach the server. Check your internet connection and try again.', 0);
+      }
+      await wait(RETRY_DELAYS_MS[attempt]);
+    } finally {
+      clearTimeout(timer);
+    }
   }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     throw new ApiError(data?.error || `Something went wrong (error ${res.status}). Please try again.`, res.status, data?.code);
   }
   return data;
+}
+
+/** Wakes a sleeping free-tier server early, so the first sign-in tap does not wait for it. */
+export function warmUpServer() {
+  fetch(`${BASE}/healthz`).catch(() => { /* best effort */ });
 }
 
 export const API_BASE = BASE;

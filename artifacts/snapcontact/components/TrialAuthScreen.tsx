@@ -12,6 +12,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { PressScale, tap, useInsets } from './ui';
 import { GoogleSignInButton } from './GoogleSignInButton';
+import { warmUpServer } from '@/lib/api';
 
 /**
  * Email sign-in:
@@ -75,6 +76,8 @@ export function TrialAuthScreen({
     const t = setTimeout(() => setSlow(true), 5000);
     return () => clearTimeout(t);
   }, [loading]);
+
+  useEffect(() => { warmUpServer(); }, []);
 
   const shownError = localError || (showServerError ? error : null);
   const cleanEmail = email.trim();
