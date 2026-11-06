@@ -155,7 +155,9 @@ export default function Index() {
           onLogin={auth.login}
           onCheckEmail={auth.checkEmail}
           onRequestOtp={auth.requestOtp}
+          onRequestPasswordReset={auth.requestPasswordReset}
           onVerifyOtp={auth.verifyOtp}
+          onSetPassword={auth.setPassword}
           onGoogleIdToken={auth.signInWithGoogle}
           onSuccess={() => {
             setPaymentVerifyOpen(false);

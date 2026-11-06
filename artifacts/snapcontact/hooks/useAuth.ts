@@ -13,6 +13,8 @@ import {
 import { ApiError, apiFetch } from '@/lib/api';
 import { CashfreePaymentResult } from '@/lib/cashfree';
 
+const DEMO_EMAIL = 'traveler@example.com';
+
 export function useAuth() {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [guestSubscription, setGuestSubscription] = useState<SubscriptionInfo>(() =>
@@ -21,6 +23,8 @@ export function useAuth() {
   const [isLoading, setIsLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
   const busyRef = useRef(false);
+  // Session from a verified code, held until the user creates or resets their password.
+  const pendingSessionRef = useRef<any>(null);
 
   // Load stored user on mount
   useEffect(() => {
@@ -65,8 +69,11 @@ export function useAuth() {
     setUser(profile);
   }, []);
 
-  /** Google-style first step: does an account exist for this email? null when the check failed. */
-  const checkEmail = useCallback(async (email: string): Promise<boolean | null> => {
+  /**
+   * First step: 'password' when this account already has a password, otherwise 'otp'
+   * (new emails and accounts that have not created a password yet). null when the check failed.
+   */
+  const checkEmail = useCallback(async (email: string): Promise<'password' | 'otp' | null> => {
     setAuthError(null);
     const cleanEmail = email.trim();
     if (!cleanEmail || !isValidEmail(cleanEmail)) {
@@ -75,13 +82,35 @@ export function useAuth() {
     }
     try {
       const data = await apiFetch('/auth/check-email', { method: 'POST', body: JSON.stringify({ email: cleanEmail }) });
-      return !!data.exists;
+      return data.method === 'password' ? 'password' : 'otp';
     } catch (e: any) {
-      // Older server without /auth/check-email: go straight to the code step. Those servers
-      // sign in existing users and create new ones when the code is verified.
-      if (e instanceof ApiError && e.status === 404 && !e.code) return true;
+      // Older server without /auth/check-email: it signs in with an email code only.
+      if (e instanceof ApiError && e.status === 404 && !e.code) return 'otp';
       setAuthError(e?.message || 'Could not reach the server. Check your connection and try again.');
       return null;
+    }
+  }, []);
+
+  /** Emails a code for setting a new password. The server answers the same for unknown emails. */
+  const requestPasswordReset = useCallback(async (email: string): Promise<boolean> => {
+    setAuthError(null);
+    const cleanEmail = email.trim();
+    if (!cleanEmail || !isValidEmail(cleanEmail)) {
+      setAuthError('Please enter a valid email address.');
+      return false;
+    }
+    if (busyRef.current) return false;
+    busyRef.current = true;
+    try {
+      await apiFetch('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email: cleanEmail }) });
+      return true;
+    } catch (e: any) {
+      setAuthError(e instanceof ApiError && e.status === 404 && !e.code
+        ? 'Password reset is not available yet. Please try again later.'
+        : e?.message || 'Failed to send code');
+      return false;
+    } finally {
+      busyRef.current = false;
     }
   }, []);
 
@@ -148,15 +177,26 @@ export function useAuth() {
     }
   }, []);
 
-  const verifyOtp = useCallback(async (email: string, otp: string, name?: string): Promise<boolean> => {
+  /**
+   * Checks the emailed code. When the account still needs a password (first sign-in) or the code
+   * was for a password reset, the session is held back until setPassword succeeds, so the user is
+   * not signed in without a password.
+   */
+  const verifyOtp = useCallback(async (
+    email: string, otp: string, name?: string, purpose: 'signin' | 'reset' = 'signin',
+  ): Promise<'signed-in' | 'needs-password' | false> => {
     if (busyRef.current) return false;
     busyRef.current = true;
     setAuthError(null);
     const cleanEmail = email.trim();
     try {
       const data = await apiFetch('/auth/verify-otp', { method: 'POST', body: JSON.stringify({ email: cleanEmail, otp, name }) });
+      if (data.needsPassword === true || purpose === 'reset') {
+        pendingSessionRef.current = data;
+        return 'needs-password';
+      }
       await applySession(data);
-      return true;
+      return 'signed-in';
     } catch (e: any) {
       setAuthError(e?.message || 'Invalid code');
       return false;
@@ -165,61 +205,79 @@ export function useAuth() {
     }
   }, [applySession]);
 
+  /** Creates (or resets) the password with the session from the code just verified, then signs in. */
+  const setPassword = useCallback(async (password: string): Promise<boolean> => {
+    if (busyRef.current) return false;
+    setAuthError(null);
+    const pending = pendingSessionRef.current;
+    if (!pending?.token) {
+      setAuthError('Your code has expired. Go back and request a new one.');
+      return false;
+    }
+    busyRef.current = true;
+    try {
+      const data = await apiFetch('/auth/set-password', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${pending.token}` },
+        body: JSON.stringify({ password }),
+      });
+      pendingSessionRef.current = null;
+      await applySession(data);
+      return true;
+    } catch (e: any) {
+      setAuthError(e?.message || 'Could not save your password. Please try again.');
+      return false;
+    } finally {
+      busyRef.current = false;
+    }
+  }, [applySession]);
+
   const login = useCallback(
-    async (email: string, _password?: string): Promise<boolean> => {
+    async (email: string, password?: string): Promise<boolean> => {
       if (busyRef.current) return false;
-      busyRef.current = true;
       setAuthError(null);
       const cleanEmail = email.trim();
-      if (!cleanEmail) {
-        setAuthError('Please enter your email address.');
-        busyRef.current = false;
-        return false;
-      }
-      if (!isValidEmail(cleanEmail)) {
+      if (!cleanEmail || !isValidEmail(cleanEmail)) {
         setAuthError('Please enter a valid email address.');
-        busyRef.current = false;
         return false;
       }
 
-      // Try backend auth first
-      try {
-        const data = await apiFetch('/auth/login', { method: 'POST', body: JSON.stringify({ email: cleanEmail, password: _password || '' }) });
+      // "Try demo account" stays on this device and never talks to the server.
+      if (!password && cleanEmail.toLowerCase() === DEMO_EMAIL) {
+        const existing = await getStoredUser();
+        const same = existing?.email.toLowerCase() === DEMO_EMAIL;
         const profile: UserProfile = {
-          id: data.user.id,
-          email: data.user.email,
-          name: data.user.name,
-          createdAt: new Date().toISOString(),
-          subscription: data.user.subscription || createDefaultTrialSubscription(),
+          id: same ? existing!.id : `usr_${Date.now()}`,
+          email: DEMO_EMAIL,
+          name: 'traveler',
+          createdAt: same ? existing!.createdAt : new Date().toISOString(),
+          subscription: same
+            ? calculateSubscriptionState(existing!.subscription, existing!.createdAt)
+            : createDefaultTrialSubscription(),
         };
-        await SecureStore.setItemAsync('snapcontact.token.v1', data.token);
-        if (data.refreshToken) await SecureStore.setItemAsync('snapcontact.refresh.v1', data.refreshToken);
         await storeUser(profile);
         setUser(profile);
         return true;
-      } catch {
-        // fallback to local profile (offline)
+      }
+      if (!password) {
+        setAuthError('Enter your password.');
+        return false;
       }
 
-      const now = new Date().toISOString();
-      const existing = await getStoredUser();
-
-      const profile: UserProfile = {
-        id: existing?.email.toLowerCase() === cleanEmail.toLowerCase() ? existing.id : `usr_${Date.now()}`,
-        email: cleanEmail,
-        name: cleanEmail.split('@')[0],
-        createdAt: existing?.email.toLowerCase() === cleanEmail.toLowerCase() ? existing.createdAt : now,
-        subscription: existing?.email.toLowerCase() === cleanEmail.toLowerCase()
-          ? calculateSubscriptionState(existing.subscription, existing.createdAt)
-          : createDefaultTrialSubscription(),
-      };
-
-      await storeUser(profile);
-      setUser(profile);
-      busyRef.current = false;
-      return true;
+      busyRef.current = true;
+      try {
+        const data = await apiFetch('/auth/login', { method: 'POST', body: JSON.stringify({ email: cleanEmail, password }) });
+        await applySession(data);
+        return true;
+      } catch (e: any) {
+        // Never fall back to an offline sign-in: a wrong password must not open the account.
+        setAuthError(e?.message || 'Could not sign in. Please try again.');
+        return false;
+      } finally {
+        busyRef.current = false;
+      }
     },
-    []
+    [applySession]
   );
 
   const signup = useCallback(
@@ -398,6 +456,8 @@ export function useAuth() {
     checkEmail,
     requestOtp,
     verifyOtp,
+    setPassword,
+    requestPasswordReset,
     signInWithGoogle,
     verifyLink,
     logout,
