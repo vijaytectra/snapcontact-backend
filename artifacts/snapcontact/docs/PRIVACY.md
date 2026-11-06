@@ -6,8 +6,8 @@ before store submission; it is not a substitute for that release requirement.
 
 ## Private processing
 
-SnapContact has no account and does not upload your screenshots, photos, OCR text
-or contact data to a developer server. It does not read other apps in the
+SnapContact requires an account (email sign-in or Google). It does not upload your
+screenshots, photos, OCR text or contact data to a developer server. It does not read other apps in the
 background, scan your photo library automatically, scrape social networks, or
 read your address book. Images are processed only after you select, photograph
 or explicitly share them.
@@ -16,11 +16,27 @@ Apple Vision performs OCR on iOS. Android uses bundled ML Kit recognizers, not a
 cloud OCR endpoint or first-use model download. These are best-effort tools:
 you should review every phone number and business-name suggestion.
 
-## Storage and deletion
+## Account data on our server
 
-- Only your default country and onboarding completion are persisted as app
-  preferences.
-- Current text, candidate numbers and outcomes are held in memory, not history.
+- Email address, name, a scrypt hash of your password (never the password), the
+  dates of your free trial and paid plan, and your payment orders (amount, status,
+  Cashfree order and payment references). This is what lets a plan follow you to a
+  new phone or a reinstall.
+- Sign-in codes and links are stored hashed and expire after 10 minutes.
+- Payments are processed by Cashfree. Card, UPI and bank details are entered on
+  Cashfree's checkout and never reach SnapContact. Cashfree receives your email and
+  the mobile number you enter for the payment.
+
+## Storage and deletion on your phone
+
+- Your default country and onboarding completion are persisted as app preferences.
+- Your profile, plan and sign-in session are kept on the phone (the session in
+  secure storage) until you log out.
+- Search History lists texts searched in the current session only; it is held in
+  memory and cleared when the app closes.
+- If the contact editor cannot open, the numbers you chose to save are kept in a
+  retry list on the phone until they are saved.
+- Current text, candidate numbers and outcomes are held in memory.
 - Selected images use private temporary files. Tap **Discard** to remove the
   current app-owned cache copies and clear current text/results.
 - An iOS image explicitly shared to the extension is queued in private shared
@@ -50,7 +66,8 @@ you should review every phone number and business-name suggestion.
 
 ## No tracking or monetization
 
-The initial release is free. No advertising, analytics/tracking SDK, cloud
-contact sync, payments, or purchase tracking is implemented. Development tooling
+New accounts get a 7-day free trial; Annual Pro is a one-time ₹99 payment for 12
+months through Cashfree and does not renew automatically. No advertising,
+analytics/tracking SDK or cloud contact sync is implemented. Development tooling
 may connect to the development server; check release binaries, not Metro
 development traffic, when verifying product network behavior.

@@ -3,6 +3,10 @@ import cors from "cors";
 import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
+import { assertServerConfig } from "./lib/config";
+
+// Refuse to start with missing or weak secrets instead of failing later or signing with a known key.
+assertServerConfig();
 
 const app: Express = express();
 

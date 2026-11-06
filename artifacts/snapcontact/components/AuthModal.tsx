@@ -220,7 +220,7 @@ export function AuthModal({
                       Member since: {new Date(user.createdAt).toLocaleDateString()}
                     </Text>
                     <Text style={{ fontFamily: F.r, fontSize: 12, color: '#71717A' }}>
-                      Auto-renewal notice: 15 days before 1-year mark
+                      Plans never renew automatically
                     </Text>
                   </View>
                 </View>
@@ -270,7 +270,7 @@ export function AuthModal({
                       1st Week Free Trial Included
                     </Text>
                     <Text style={{ fontFamily: F.r, fontSize: 12, color: '#A1A1AA', lineHeight: 17 }}>
-                      7 days zero-cost access. Auto-renewal at ₹99/year with notice 15 days prior.
+                      7 days free, then ₹99 for 1 year if you choose to upgrade. No automatic charges.
                     </Text>
                   </View>
                 </View>

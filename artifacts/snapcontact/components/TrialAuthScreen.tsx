@@ -35,6 +35,7 @@ export function TrialAuthScreen({
   onRequestPasswordReset,
   onVerifyOtp,
   onSetPassword,
+  pendingPasswordEmail,
   onGoogleIdToken,
   error,
   isExpired,
@@ -48,6 +49,8 @@ export function TrialAuthScreen({
   onRequestPasswordReset: (email: string) => Promise<boolean>;
   onVerifyOtp: (email: string, otp: string, name?: string, purpose?: 'signin' | 'reset') => Promise<'signed-in' | 'needs-password' | false>;
   onSetPassword: (password: string) => Promise<boolean>;
+  /** Set after a first sign-in by emailed link: open straight on "Create a password". */
+  pendingPasswordEmail?: string | null;
   onGoogleIdToken: (idToken: string) => Promise<boolean>;
   error?: string | null;
   isExpired?: boolean;
@@ -63,7 +66,7 @@ export function TrialAuthScreen({
   const [mode, setMode] = useState<Mode>('signin');
   const [localError, setLocalError] = useState<string | null>(null);
   // Server errors arrive through `error`; only show them after the call that caused them.
-  const [showServerError, setShowServerError] = useState(false);
+  const [showServerError, setShowServerError] = useState(() => !!error); // e.g. an expired emailed link
   const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   // The server sleeps when idle on free hosting and can take up to a minute to wake.
@@ -78,6 +81,18 @@ export function TrialAuthScreen({
   }, [loading]);
 
   useEffect(() => { warmUpServer(); }, []);
+
+  useEffect(() => {
+    if (!pendingPasswordEmail) return;
+    setEmail(pendingPasswordEmail);
+    setMode('signin');
+    setPassword('');
+    setConfirm('');
+    setLocalError(null);
+    setShowServerError(false);
+    setNotice('Your email is verified. Create a password to finish signing in.');
+    setStep('create-password');
+  }, [pendingPasswordEmail]);
 
   const shownError = localError || (showServerError ? error : null);
   const cleanEmail = email.trim();

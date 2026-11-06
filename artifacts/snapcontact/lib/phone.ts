@@ -6,6 +6,7 @@ import {
   type CountryCode,
 } from 'libphonenumber-js/max';
 import { R } from './runtimeStrings.ts';
+import { countryName as regionDisplayName } from './countryNames.ts';
 
 export type Candidate = {
   id: string;
@@ -24,18 +25,31 @@ export type Candidate = {
   callingCode?: string;
   countryName?: string;
   international?: boolean;
+  /** Organisation found near the number, if any (shown separately from the person's name). */
+  company?: string;
+  /** Job title found near the number; never used as the name. */
+  designation?: string;
   /** Countries suggested by the rest of the image (other numbers, email/web domains). */
   countryHints?: CountryCode[];
 };
 export type CountryOption = { code: CountryCode; name: string; callingCode: string };
 
 
+/**
+ * Country list for the picker. Uses the runtime's localized names when it has them; Hermes
+ * (Android/iOS builds) has no Intl.DisplayNames, so the bundled English table is the fallback.
+ */
 export function countryOptions(locale = 'en'): CountryOption[] {
-  let names: Intl.DisplayNames | undefined;
-  try { names = new Intl.DisplayNames([locale], { type: 'region' }); } catch { /* ISO codes remain usable offline */ }
+  let names: { of(code: string): string | undefined } | undefined;
+  try { names = new Intl.DisplayNames([locale], { type: 'region' }); } catch { names = undefined; }
+  const nameOf = (code: CountryCode) => {
+    let localized: string | undefined;
+    try { localized = names?.of(code); } catch { localized = undefined; }
+    return localized && localized !== code ? localized : regionDisplayName(code);
+  };
   return getCountries().map(code => ({
     code,
-    name: names?.of(code) ?? code,
+    name: nameOf(code),
     callingCode: `+${getCountryCallingCode(code)}`,
   })).sort((a, b) => a.name.localeCompare(b.name, locale));
 }
@@ -63,11 +77,7 @@ export function validateNumber(raw: string, country: CountryCode) {
   let countryName = '';
   if (phone) {
     const region = international ? phone.country : country;
-    let regionName = region ?? '';
-    if (region) {
-      try { regionName = new Intl.DisplayNames(undefined, { type: 'region' }).of(region) ?? region; }
-      catch { /* ISO region codes remain available offline. */ }
-    }
+    const regionName = region ? regionDisplayName(region) : '';
     countryLabel = international
       ? R.detectedCallingCode(regionName || (phone.countryCallingCode === '1' ? R.northAmericaShared : R.countryUndetermined), phone.countryCallingCode)
       : R.defaultCallingCode(regionName, phone.countryCallingCode);
@@ -291,17 +301,59 @@ export function extractWebsites(
   return results.sort((a, b) => a.start - b.start);
 }
 
-function nearbyName(text: string, offset: number): string {
+// Phone/email/web labels that can prefix a value on the same line ("Office: 044 …").
+const FIELD_LABEL = /(?:\b(?:tel(?:ephone)?|phone|ph|mob(?:ile)?|cell|call|office|work|home|landline|direct|fax|whatsapp|contact|email|e-mail|mail|web|website|site)\s*[.:：]?|\b[mtop]\s*[.:：])\s*$/i;
+const LABEL_ONLY = /^\s*(?:tel(?:ephone)?|phone|ph|mob(?:ile)?|cell|call|office|work|home|landline|direct|fax|whatsapp|contact|email|e-mail|mail|web|website|site)\s*[.:：]?\s*$/i;
+// Job titles and roles: never used as the contact's name.
+const DESIGNATION = /\b(?:manager|director|engineer|executive|officer|ceo|cto|cfo|coo|cmo|founder|co-?founder|president|vp|head|lead|consultant|developer|designer|analyst|specialist|coordinator|assistant|associate|intern|partner|owner|proprietor|sales|marketing|accountant|advocate|lawyer|architect|supervisor|administrator|admin|representative|agent|chairman|chairperson|secretary|treasurer|technician|trainer|teacher|professor|surgeon|physician|dentist|nurse|pharmacist|chef|photographer|editor|writer|manager\/|hr|operations|business development|customer success|support)\b/i;
+// Organisation words: kept as the company, used as the name only when no person is found.
+const COMPANY = /\b(?:pvt|private|ltd|limited|llp|llc|inc|corp|corporation|company|co\.|gmbh|technologies|technology|tech|solutions|services|enterprises?|industries|group|traders|trading|agency|associates|consultancy|consulting|studios?|labs?|systems|hospital|clinic|cafe|café|restaurant|hotel|resorts?|store|stores|mart|bank|international|global|foundation|academy|school|college|university|pharma|motors|textiles|exports|imports|builders|constructions?|travels|tours)\b/i;
+
+type Field = { name: string; company?: string; designation?: string };
+
+function cleanLine(line: string) {
+  return line.replace(FIELD_LABEL, '').replace(/[|•·,;:]+$/, '').trim();
+}
+
+/** A plausible person's name: 1–4 words of letters (initials allowed), no digits, title or upper case. */
+function looksLikePerson(line: string) {
+  if (line.length < 2 || line.length > 40 || /\d|@|https?:|www\./i.test(line)) return false;
+  if (DESIGNATION.test(line) || COMPANY.test(line) || LABEL_ONLY.test(line)) return false;
+  const words = line.replace(/^(?:mr|mrs|ms|miss|dr|prof|shri|smt)\.?\s+/i, '').split(/\s+/).filter(Boolean);
+  if (words.length < 1 || words.length > 4) return false;
+  return words.every((w) => /^[\p{Lu}][\p{L}'’.-]*$/u.test(w) || /^[\p{Lu}]\.?$/u.test(w));
+}
+
+function usableLine(line: string) {
+  return line.length >= 2 && line.length <= 90 && /\p{L}/u.test(line)
+    && !/https?:|www\.|@/i.test(line) && !LABEL_ONLY.test(line) && !/\d{4}/.test(line)
+    && !/\.(?:com|org|net|edu|gov|io|ai|app|dev|tech|co|in|pl|de|uk|eu)\b/i.test(line);
+}
+
+/**
+ * Name, company and job title from the lines around a number. The name is the nearest line that
+ * looks like a person; a company is used only when there is no person; a designation never is.
+ */
+function contactDetailsNear(text: string, offset: number): Field {
   const before = text.slice(0, offset).split('\n');
-  const sameLine = before.at(-1)?.replace(/(?:tel(?:ephone)?|phone|mobile|call|fax|whatsapp|contact|email|e-mail|mail|web|website|site)\s*[:：]?\s*$/i, '').trim() ?? '';
-  const previous = before.slice(0, -1).reverse().slice(0, 3);
-  const next = text.slice(offset).split('\n').slice(1, 3);
-  return [sameLine, ...previous, ...next].find(line =>
-    line.length >= 2 && line.length <= 90 && /\p{L}/u.test(line) &&
-    !/https?:|www\.|@|^\s*(?:tel|phone|mobile|call|fax|whatsapp|email|e-mail|mail|web|website|site)\s*[:：]?\s*$/i.test(line) &&
-    !/\d{4}/.test(line) &&
-    !/\.(?:com|org|net|edu|gov|io|ai|app|dev|tech|co|pl|de|uk|eu)\b/i.test(line),
-  )?.trim() ?? '';
+  const sameLine = cleanLine(before.at(-1) ?? '');
+  const previous = before.slice(0, -1).reverse().slice(0, 4).map(cleanLine);
+  const next = text.slice(offset).split('\n').slice(1, 3).map(cleanLine);
+  const window = [sameLine, ...previous, ...next].filter(usableLine);
+  const person = window.find(looksLikePerson);
+  const company = window.find((l) => COMPANY.test(l) && !DESIGNATION.test(l))
+    ?? window.find((l) => !looksLikePerson(l) && !DESIGNATION.test(l) && /\p{L}{3}/u.test(l) && l !== person);
+  const designation = window.find((l) => DESIGNATION.test(l) && !COMPANY.test(l));
+  return {
+    name: person ?? (company && COMPANY.test(company) ? company : ''),
+    ...(company ? { company } : {}),
+    ...(designation ? { designation } : {}),
+  };
+}
+
+/** Kept for callers that only need the suggested contact name. */
+function nearbyName(text: string, offset: number): string {
+  return contactDetailsNear(text, offset).name;
 }
 
 export function extractCandidates(source: string, country: CountryCode): Candidate[] {
@@ -374,7 +426,7 @@ export function extractCandidates(source: string, country: CountryCode): Candida
 
     return [{
       id: `number-${start}-${results.length}`, raw, number: raw,
-      name: nearbyName(text, start),
+      ...contactDetailsNear(text, start),
       email: attachedEmail,
       website: attachedWebsite,
       selected: check.valid,

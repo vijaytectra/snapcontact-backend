@@ -1,0 +1,57 @@
+# Render Blueprint for the SnapContact API.
+# A blueprint only takes effect when the service is created or synced from it
+# (Render dashboard -> Blueprints -> New Blueprint Instance, pointing at this repo).
+# An existing service created by hand keeps its own dashboard settings; see docs/DEPLOYMENT.md.
+services:
+  - type: web
+    name: snapcontact-backend
+    runtime: node
+    plan: free
+    branch: main
+    autoDeploy: true
+    # Only redeploy when server code or its shared libraries change.
+    buildFilter:
+      paths:
+        - artifacts/api-server/**
+        - lib/**
+        - package.json
+        - pnpm-lock.yaml
+        - pnpm-workspace.yaml
+        - render.yaml
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter @workspace/api-server run build
+    startCommand: node --enable-source-maps artifacts/api-server/dist/index.mjs
+    healthCheckPath: /api/healthz
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: "22"
+      # Secrets: set in the dashboard (sync: false means Render asks for them, never stored here).
+      - key: DATABASE_URL
+        sync: false
+      - key: TOKEN_SECRET
+        generateValue: true
+      - key: PUBLIC_BASE_URL
+        value: https://snapcontact-backend.onrender.com
+      - key: CASHFREE_APP_ID
+        sync: false
+      - key: CASHFREE_SECRET_KEY
+        sync: false
+      - key: CASHFREE_ENV
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM
+        sync: false
+      - key: BREVO_API_KEY
+        sync: false
+      - key: GOOGLE_CLIENT_IDS
+        sync: false
+      - key: ADMIN_KEY
+        sync: false

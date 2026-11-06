@@ -8,12 +8,13 @@ import { UserProfile, SubscriptionInfo } from '@/lib/auth';
 
 const SECTION_ICONS: Record<string, React.ComponentProps<typeof Ionicons>['name']> = {
   'On-device reading': 'hardware-chip-outline',
-  'No upload, no login': 'cloud-offline-outline',
+  'What stays on your phone': 'cloud-offline-outline',
   'Saved contacts': 'person-circle-outline',
   'Share from Photos (iOS)': 'share-social-outline',
   'Native build required': 'phone-portrait-outline',
   'Quick Capture (Android)': 'layers-outline',
-  '1-Week Free Trial & Cashfree': 'card-outline',
+  '7-Day Free Trial & Cashfree': 'card-outline',
+  'Your account': 'person-outline',
   'Free to use': 'sparkles-outline',
 };
 
@@ -159,7 +160,7 @@ export function SettingsModal({
                       </View>
                     </View>
                     <Text style={{ fontFamily: F.r, fontSize: 11, color: c.mutedForeground }}>
-                      Auto-renewal notice 15 days before 1 year · Cashfree PG
+                      ₹99 for 1 year · no automatic renewal · Cashfree
                     </Text>
                   </View>
 

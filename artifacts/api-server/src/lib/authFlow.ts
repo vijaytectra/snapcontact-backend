@@ -45,6 +45,8 @@ export type AuthDeps = {
   verifyPassword(password: string, salt: string, hash: string): boolean;
   createToken(payload: object, ttlMs: number): string;
   verifyToken(token: string): any | null;
+  /** Server-side view of the user's plan sent to the app; defaults to the stored value. */
+  describeSubscription?: (user: AuthUser, now: number) => unknown;
   now?: () => number;
 };
 
@@ -84,7 +86,8 @@ export function createAuthFlow(deps: AuthDeps) {
   const hasPassword = (user: AuthUser) => !deps.verifyPassword('', user.salt, user.passwordHash);
 
   function publicUser(user: AuthUser) {
-    return { id: user.id, email: user.email, name: user.name, subscription: user.subscription };
+    const subscription = deps.describeSubscription ? deps.describeSubscription(user, now()) : user.subscription;
+    return { id: user.id, email: user.email, name: user.name, subscription };
   }
 
   async function startSession(user: AuthUser, via: 'otp' | 'password' | 'google') {
@@ -151,6 +154,7 @@ export function createAuthFlow(deps: AuthDeps) {
 
   return {
     hasPassword,
+    publicUser,
     startSession,
     findOrCreateUser,
 

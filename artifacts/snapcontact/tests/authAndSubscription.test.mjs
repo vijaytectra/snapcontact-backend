@@ -6,9 +6,11 @@ import {
   isValidEmail,
 } from '../lib/auth.ts';
 import {
-  createCashfreeOrder,
-  processCashfreePayment,
   CASHFREE_PAYMENT_METHODS,
+  normalizeIndianMobile,
+  startCheckout,
+  verifyPayment,
+  waitForPayment,
 } from '../lib/cashfree.ts';
 
 test('1st one-week (7-day) free trial period is initialized correctly', () => {
@@ -53,21 +55,34 @@ test('Email validation correctly identifies valid and invalid addresses for Mail
   assert.equal(isValidEmail('@nodomain.com'), false);
 });
 
-test('Cashfree order creation includes INR currency, customer details, and session ID', async () => {
-  const customer = {
-    customerId: 'cust_test_123',
-    customerEmail: 'test.user@example.com',
-    customerName: 'Test User',
-    customerPhone: '9876543210',
-  };
+test('checkout asks the server for an order and never sends a price or user id', async () => {
+  const calls = [];
+  const fakeFetch = async (path, options) => { calls.push({ path, body: JSON.parse(options.body) }); return { orderId: 'SC_1', checkoutUrl: 'https://api/checkout/SC_1' }; };
+  const session = await startCheckout(fakeFetch, '9876543210');
+  assert.equal(session.orderId, 'SC_1');
+  assert.equal(calls[0].path, '/cashfree/orders');
+  assert.deepEqual(Object.keys(calls[0].body).sort(), ['phone', 'plan']);
+});
 
-  const order = await createCashfreeOrder(customer, 99);
-  assert.ok(order.orderId.startsWith('CF_ORDER_'));
-  assert.equal(order.orderAmount, 99);
-  assert.equal(order.orderCurrency, 'INR');
-  assert.equal(order.status, 'ACTIVE');
-  assert.ok(order.paymentSessionId.startsWith('session_'));
-  assert.equal(order.customerDetails.customerEmail, 'test.user@example.com');
+test('payment status comes from the server; pending is re-checked, final states stop', async () => {
+  let n = 0;
+  const outcome = await waitForPayment(async () => (++n < 3 ? 'pending' : 'paid'), { sleep: async () => {} });
+  assert.equal(outcome, 'paid');
+  assert.equal(n, 3);
+  n = 0;
+  assert.equal(await waitForPayment(async () => { n++; return 'failed'; }, { sleep: async () => {} }), 'failed');
+  assert.equal(n, 1);
+  assert.equal(await waitForPayment(async () => 'pending', { attempts: 2, sleep: async () => {} }), 'pending');
+  const seen = [];
+  assert.equal(await verifyPayment(async (path) => { seen.push(path); return { status: 'cancelled' }; }, 'SC 1'), 'cancelled');
+  assert.equal(seen[0], '/cashfree/orders/SC%201/verify');
+});
+
+test('mobile numbers for Cashfree are validated before any request', () => {
+  assert.equal(normalizeIndianMobile('+91 98765 43210'), '9876543210');
+  assert.equal(normalizeIndianMobile('098765 43210'), '9876543210');
+  assert.equal(normalizeIndianMobile('12345'), null);
+  assert.equal(normalizeIndianMobile('5876543210'), null);
 });
 
 test('Cashfree payment channels (UPI, Card, NetBanking) are configured', () => {
@@ -76,22 +91,6 @@ test('Cashfree payment channels (UPI, Card, NetBanking) are configured', () => {
   assert.ok(ids.includes('upi'));
   assert.ok(ids.includes('card'));
   assert.ok(ids.includes('netbanking'));
-});
-
-test('Cashfree payment processing completes with transaction reference and success status', async () => {
-  const order = await createCashfreeOrder({
-    customerId: 'cust_upi_1',
-    customerEmail: 'alex@example.com',
-  }, 99);
-
-  const result = await processCashfreePayment(order, 'UPI', 'Google Pay');
-  assert.equal(result.success, true);
-  assert.equal(result.orderId, order.orderId);
-  assert.ok(result.paymentId.startsWith('cf_pay_'));
-  assert.ok(result.referenceId.startsWith('cf_ref_'));
-  assert.equal(result.paymentMethod, 'UPI');
-  assert.equal(result.amount, 99);
-  assert.equal(result.currency, 'INR');
 });
 
 test('Annual subscription activation updates status to annual with Cashfree payment reference', () => {

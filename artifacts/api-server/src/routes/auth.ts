@@ -5,6 +5,8 @@ import { sendOtpEmail, sendMagicLinkEmail } from '../lib/email';
 import { rateLimit } from '../lib/rateLimit';
 import { verifyGoogleIdToken } from '../lib/google';
 import { AuthError, createAuthFlow } from '../lib/authFlow';
+import { describeSubscription } from '../lib/subscription';
+import { requireUser, type AuthedRequest } from '../lib/session';
 
 const router: Router = Router();
 
@@ -12,6 +14,7 @@ const flow = createAuthFlow({
   store: { findUserByEmail, findUserById, insertUser, updateUser, saveVerification, findVerification, deleteVerification },
   mailer: { sendOtp: sendOtpEmail, sendMagicLink: sendMagicLinkEmail },
   hashPassword, verifyPassword, createToken, verifyToken,
+  describeSubscription: (user, now) => describeSubscription(user.subscription, user.createdAt, now),
 });
 
 const TOO_MANY = { error: 'Too many requests. Try again later.' };
@@ -123,15 +126,11 @@ router.post('/refresh', async (req: Request, res: Response) => {
   return res.json({ token, refreshToken: newRefresh });
 });
 
-router.get('/me', async (req: Request, res: Response) => {
-  const auth = req.headers.authorization || '';
-  const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
-  if (!token) return res.status(401).json({ error: 'Missing token' });
-  const payload = verifyToken(token);
-  if (!payload) return res.status(401).json({ error: 'Invalid token' });
-  const user = await findUserById(payload.userId);
-  if (!user) return res.status(404).json({ error: 'User not found' });
-  return res.json({ user: { id: user.id, email: user.email, name: user.name, subscription: user.subscription } });
+// The signed-in user and the plan the server says they have. The app treats this as the truth.
+router.get('/me', requireUser, async (req: Request, res: Response) => {
+  const user = await findUserById((req as AuthedRequest).userId);
+  if (!user) return res.status(401).json({ error: 'Your session has expired. Sign in again.', code: 'BAD_TOKEN' });
+  return res.json({ user: flow.publicUser(user) });
 });
 
 export default router;

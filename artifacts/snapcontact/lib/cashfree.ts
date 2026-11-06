@@ -1,51 +1,23 @@
-import { apiFetch } from './api.ts';
+/**
+ * Cashfree payments, client side. The app never prices, creates or confirms a payment itself:
+ *   startCheckout  -> the server creates the order (price from its own plan table) and returns a
+ *                     hosted checkout URL that runs Cashfree's official JS checkout.
+ *   verifyPayment  -> after checkout, the server checks the order with Cashfree and, only if it is
+ *                     paid in full, activates the plan in its database.
+ * Card, UPI and bank details are entered on Cashfree's page, never in this app.
+ */
 
-export type CashfreeEnvironment = 'SANDBOX' | 'PRODUCTION';
+export type PaymentOutcome = 'paid' | 'pending' | 'failed' | 'cancelled';
 
-export type CashfreeConfig = {
-  appId: string;
-  secretKey?: string;
-  environment: CashfreeEnvironment;
-  apiVersion: string;
-};
-
-export const CASHFREE_CONFIG: CashfreeConfig = {
-  appId: process.env.EXPO_PUBLIC_CASHFREE_APP_ID || 'TEST_CF_APP_SNAPCONTACT_2026',
-  environment: 'SANDBOX',
-  apiVersion: '2023-08-01',
-};
-
-export type CashfreeCustomer = {
-  customerId: string;
-  customerEmail: string;
-  customerPhone?: string;
-  customerName?: string;
-};
-
-export type CashfreeOrder = {
+export type CheckoutSession = {
   orderId: string;
-  orderAmount: number;
-  orderCurrency: string;
-  orderNote: string;
-  paymentSessionId: string;
-  customerDetails: CashfreeCustomer;
-  createdAt: string;
-  status: 'ACTIVE' | 'PAID' | 'EXPIRED';
-};
-
-export type CashfreePaymentResult = {
-  success: boolean;
-  orderId: string;
-  paymentId: string;
-  paymentMethod: 'UPI' | 'CARD' | 'NETBANKING' | 'WALLET';
-  paymentDetails: string;
+  checkoutUrl: string;
   amount: number;
   currency: string;
-  referenceId: string;
-  transactionTime: string;
-  message?: string;
+  environment: 'SANDBOX' | 'PRODUCTION';
 };
 
+/** Payment methods Cashfree's checkout offers; shown for information only. */
 export type CashfreePaymentMethodOption = {
   id: 'upi' | 'card' | 'netbanking';
   title: string;
@@ -54,91 +26,41 @@ export type CashfreePaymentMethodOption = {
 };
 
 export const CASHFREE_PAYMENT_METHODS: CashfreePaymentMethodOption[] = [
-  {
-    id: 'upi',
-    title: 'UPI (Zero Extra Fee)',
-    subtitle: 'Google Pay, PhonePe, Paytm, Any UPI ID',
-    icon: 'flash-outline',
-  },
-  {
-    id: 'card',
-    title: 'Credit / Debit Card',
-    subtitle: 'Visa, MasterCard, RuPay, American Express',
-    icon: 'card-outline',
-  },
-  {
-    id: 'netbanking',
-    title: 'Net Banking',
-    subtitle: 'All Major Indian Banks (HDFC, SBI, ICICI, Axis)',
-    icon: 'business-outline',
-  },
+  { id: 'upi', title: 'UPI', subtitle: 'Google Pay, PhonePe, Paytm, any UPI app', icon: 'flash-outline' },
+  { id: 'card', title: 'Credit / Debit Card', subtitle: 'Visa, Mastercard, RuPay', icon: 'card-outline' },
+  { id: 'netbanking', title: 'Net Banking', subtitle: 'Major Indian banks', icon: 'business-outline' },
 ];
 
-export async function createCashfreeOrder(
-  customer: CashfreeCustomer,
-  planAmount = 99
-): Promise<CashfreeOrder> {
-  if (!process.env.EXPO_PUBLIC_API_URL) {
-    const timestamp = Date.now();
-    const randomSuffix = Math.random().toString(36).substring(2, 7).toUpperCase();
-    const orderId = `CF_ORDER_${timestamp}_${randomSuffix}`;
-    const paymentSessionId = `session_${timestamp}_${Math.random().toString(36).substring(2, 9)}`;
-    return {
-      orderId,
-      orderAmount: planAmount,
-      orderCurrency: 'INR',
-      orderNote: 'SnapContact Annual Subscription (1st Week Trial + 15-Day Auto-Renewal Notice)',
-      paymentSessionId,
-      customerDetails: customer,
-      createdAt: new Date().toISOString(),
-      status: 'ACTIVE',
-    };
-  }
-  try {
-    const data = await apiFetch('/cashfree/orders', {
-      method: 'POST',
-      body: JSON.stringify({
-        customerEmail: customer.customerEmail,
-        customerName: customer.customerName,
-        customerPhone: customer.customerPhone,
-        amount: planAmount,
-      }),
-    });
-    return {
-      orderId: data.orderId,
-      orderAmount: planAmount,
-      orderCurrency: 'INR',
-      orderNote: 'SnapContact Annual Subscription',
-      paymentSessionId: data.paymentSessionId,
-      customerDetails: customer,
-      createdAt: new Date().toISOString(),
-      status: 'ACTIVE',
-    };
-  } catch (e: any) {
-    throw new Error(e?.message || 'Unable to create payment order. Check your connection and try again.');
-  }
+/** Accepts "98765 43210", "+91 98765 43210" etc.; returns 10 digits or null. */
+export function normalizeIndianMobile(input: string): string | null {
+  const digits = input.replace(/\D/g, '').replace(/^(?:91|0)(?=\d{10}$)/, '');
+  return /^[6-9]\d{9}$/.test(digits) ? digits : null;
 }
 
-export async function processCashfreePayment(
-  order: CashfreeOrder,
-  method: 'UPI' | 'CARD' | 'NETBANKING' | 'WALLET',
-  details: string
-): Promise<CashfreePaymentResult> {
-  await new Promise((resolve) => setTimeout(resolve, 800));
+type AuthedFetch = (path: string, options?: RequestInit) => Promise<any>;
 
-  const paymentId = `cf_pay_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-  const referenceId = `cf_ref_${Math.floor(100000000 + Math.random() * 900000000)}`;
+export async function startCheckout(authedFetch: AuthedFetch, phone: string, plan = 'annual'): Promise<CheckoutSession> {
+  return authedFetch('/cashfree/orders', { method: 'POST', body: JSON.stringify({ plan, phone }) });
+}
 
-  return {
-    success: true,
-    orderId: order.orderId,
-    paymentId,
-    paymentMethod: method,
-    paymentDetails: details,
-    amount: order.orderAmount,
-    currency: order.orderCurrency,
-    referenceId,
-    transactionTime: new Date().toISOString(),
-    message: 'Payment completed successfully through Cashfree Payments',
-  };
+export async function verifyPayment(authedFetch: AuthedFetch, orderId: string): Promise<PaymentOutcome> {
+  const data = await authedFetch(`/cashfree/orders/${encodeURIComponent(orderId)}/verify`, { method: 'POST', body: '{}' });
+  return data.status;
+}
+
+/**
+ * Asks the server a few times while Cashfree finishes processing (UPI can take a few seconds).
+ * Stops as soon as the payment is paid, failed or cancelled.
+ */
+export async function waitForPayment(
+  check: () => Promise<PaymentOutcome>,
+  { attempts = 6, delayMs = 2500, sleep = (ms: number) => new Promise((r) => setTimeout(r, ms)) } = {},
+): Promise<PaymentOutcome> {
+  let outcome: PaymentOutcome = 'pending';
+  for (let i = 0; i < attempts; i++) {
+    outcome = await check();
+    if (outcome !== 'pending') return outcome;
+    if (i < attempts - 1) await sleep(delayMs);
+  }
+  return outcome;
 }

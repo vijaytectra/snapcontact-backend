@@ -1,4 +1,4 @@
-// Run: node --experimental-strip-types --test tests/*.test.mjs
+// Run: node --experimental-strip-types --import ./tests/ts-resolve.mjs --test tests/*.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createAuthFlow, AuthError, OTP_TTL_MS, MAX_CODE_ATTEMPTS, MAX_LOGIN_FAILURES } from '../src/lib/authFlow.ts';
@@ -20,12 +20,16 @@ function setup() {
     async deleteVerification(e) { verifications.delete(lower(e)); },
   };
   const flow = createAuthFlow({
-    store, mailer: { async sendOtp(to, otp) { mail.push({ to, otp }); } },
+    store, mailer: {
+      async sendOtp(to, otp) { mail.push({ to, otp }); },
+      async sendMagicLink(to, link) { mail.push({ to, link }); },
+    },
     hashPassword, verifyPassword, createToken, verifyToken, now: () => clock,
   });
   return {
     flow, users, verifications, mail,
-    lastCode: () => mail.at(-1).otp,
+    lastCode: () => mail.filter((m) => m.otp).at(-1).otp,
+    lastLinkToken: () => new URL(mail.filter((m) => m.link).at(-1).link).searchParams.get('token'),
     advance: (ms) => { clock += ms; },
   };
 }
@@ -151,4 +155,48 @@ test('check-email answers "otp" for both unknown emails and accounts without a p
   await t.flow.verifyCode('i@example.com', t.lastCode());
   assert.deepEqual(await t.flow.checkEmail('i@example.com'), { method: 'otp' });
   assert.deepEqual(await t.flow.checkEmail('unknown@example.com'), { method: 'otp' });
+});
+
+test('magic link, first sign-in: the password step is still required', async () => {
+  const t = setup();
+  await t.flow.requestCode('link@example.com');
+  const session = await t.flow.verifyLink('link@example.com', t.lastLinkToken());
+  assert.equal(session.needsPassword, true);
+  await t.flow.setPassword(session.token, 'link-pass-1');
+  assert.deepEqual(await t.flow.checkEmail('link@example.com'), { method: 'password' });
+});
+
+test('magic link, existing user with a password: signs in without asking again', async () => {
+  const t = setup();
+  await t.flow.requestCode('old@example.com');
+  const s = await t.flow.verifyCode('old@example.com', t.lastCode());
+  await t.flow.setPassword(s.token, 'old-pass-1');
+  await t.flow.requestCode('old@example.com');
+  const session = await t.flow.verifyLink('old@example.com', t.lastLinkToken());
+  assert.equal(session.needsPassword, false);
+});
+
+test('magic links are single use and expire', async () => {
+  const t = setup();
+  await t.flow.requestCode('ml@example.com');
+  const token = t.lastLinkToken();
+  await t.flow.verifyLink('ml@example.com', token);
+  await rejects(t.flow.verifyLink('ml@example.com', token), 'BAD_LINK');
+  await t.flow.requestCode('ml@example.com');
+  const second = t.lastLinkToken();
+  t.advance(OTP_TTL_MS + 1000);
+  await rejects(t.flow.verifyLink('ml@example.com', second), 'BAD_LINK');
+  await rejects(t.flow.verifyLink('ml@example.com', 'not-a-token'), 'BAD_LINK');
+});
+
+test('the subscription sent to the app is the server-described one', async () => {
+  const t = setup();
+  const flow = createAuthFlow({
+    store: { findUserByEmail: async () => undefined, findUserById: async () => undefined, insertUser: async () => {}, updateUser: async () => {},
+      saveVerification: async () => {}, findVerification: async () => undefined, deleteVerification: async () => {} },
+    mailer: { async sendOtp() {} }, hashPassword, verifyPassword, createToken, verifyToken,
+    describeSubscription: () => ({ status: 'annual' }),
+  });
+  assert.deepEqual(flow.publicUser({ id: 'u', email: 'e', name: 'n', subscription: { status: 'trial' } }).subscription, { status: 'annual' });
+  assert.ok(t);
 });

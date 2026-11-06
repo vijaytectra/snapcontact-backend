@@ -1,4 +1,4 @@
-import { pgTable, text, boolean, integer, jsonb, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, boolean, integer, jsonb, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
 
 export const usersTable = pgTable("users", {
   id: text("id").primaryKey(),
@@ -24,14 +24,31 @@ export const verificationsTable = pgTable("verifications", {
 export const ordersTable = pgTable("orders", {
   orderId: text("order_id").primaryKey(),
   userId: text("user_id").notNull(),
+  // Plan id from the server's PLANS table; amount and currency are copied from it at order time.
+  plan: text("plan"),
   amount: integer("amount").notNull(),
   currency: text("currency").notNull(),
   paymentSessionId: text("payment_session_id").notNull(),
-  status: text("status").$type<"ACTIVE" | "PAID" | "EXPIRED">().notNull(),
+  status: text("status").$type<"ACTIVE" | "PAID" | "EXPIRED" | "FAILED">().notNull(),
   createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).notNull(),
   cashfreePaymentId: text("cashfree_payment_id"),
+  paidAt: timestamp("paid_at", { withTimezone: true, mode: "string" }),
+}, (t) => [
+  index("orders_user_status_idx").on(t.userId, t.status),
+  // One Cashfree payment can activate at most one order.
+  uniqueIndex("orders_cashfree_payment_id_key").on(t.cashfreePaymentId),
+]);
+
+// Every webhook delivery we handled, for audit and to ignore duplicate deliveries.
+export const paymentEventsTable = pgTable("payment_events", {
+  eventKey: text("event_key").primaryKey(),
+  orderId: text("order_id").notNull(),
+  type: text("type").notNull(),
+  paymentStatus: text("payment_status").notNull(),
+  receivedAt: timestamp("received_at", { withTimezone: true, mode: "string" }).notNull(),
 });
 
 export type User = typeof usersTable.$inferSelect;
 export type Verification = typeof verificationsTable.$inferSelect;
 export type Order = typeof ordersTable.$inferSelect;
+export type PaymentEvent = typeof paymentEventsTable.$inferSelect;

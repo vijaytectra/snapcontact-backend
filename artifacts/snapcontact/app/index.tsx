@@ -52,11 +52,8 @@ export default function Index() {
   const [currentCardIndex, setCurrentCardIndex] = useState(0);
   const [viewMode, setViewMode] = useState<'card' | 'list'>('card');
   const [onboardingStep, setOnboardingStep] = useState<'intro' | 'auth'>('intro');
-  const [searchHistory, setSearchHistory] = useState<string[]>([
-    'Vignesh 9876543210',
-    'Arjun Kumar +91 98765 43210',
-    'Priya Sharma +91 91234 56789',
-  ]);
+  // Searches from this session only; kept in memory and cleared when the app closes.
+  const [searchHistory, setSearchHistory] = useState<string[]>([]);
 
   const flatListRef = useRef<FlatList>(null);
   const textInputRef = useRef<React.ComponentRef<typeof TextInput>>(null);
@@ -72,17 +69,30 @@ export default function Index() {
     }
   }, [auth.user, cap.onboarded]);
 
+  // Deep links arrive in a listener set up once; read the latest auth state through a ref.
+  const authRef = useRef(auth);
+  authRef.current = auth;
   useEffect(() => {
     const handleUrl = async (url: string | null) => {
+      const auth = authRef.current;
       if (!url) return;
       const parsed = Linking.parse(url);
+      // Return from Cashfree checkout (e.g. the app was restarted meanwhile): ask the server.
+      const orderId = parsed.queryParams?.order_id as string | undefined;
+      if (parsed.hostname === 'payment' || parsed.path === 'payment') {
+        if (orderId && auth.user) void auth.checkPayment(orderId).catch(() => {});
+        return;
+      }
       const email = parsed.queryParams?.email as string | undefined;
       const token = parsed.queryParams?.token as string | undefined;
       if (email && token) {
-        const ok = await auth.verifyLink(email, token);
-        if (ok) {
+        const result = await auth.verifyLink(email, token);
+        if (result === 'signed-in') {
           setOnboardingStep('intro');
           cap.completeOnboarding();
+        } else {
+          // First sign-in by link (create a password) or a bad link (show why): the sign-in screen.
+          setOnboardingStep('auth');
         }
       }
     };
@@ -158,6 +168,7 @@ export default function Index() {
           onRequestPasswordReset={auth.requestPasswordReset}
           onVerifyOtp={auth.verifyOtp}
           onSetPassword={auth.setPassword}
+          pendingPasswordEmail={auth.pendingPasswordEmail}
           onGoogleIdToken={auth.signInWithGoogle}
           onSuccess={() => {
             setPaymentVerifyOpen(false);
@@ -249,40 +260,68 @@ export default function Index() {
             }}
           >
             {/* Top Bar: Brand (tap to return to Get Started page) */}
-            <PressScale
-              testID="logo-to-onboarding"
-              accessibilityRole="button"
-              accessibilityLabel="Go to Get Started page"
-              onPress={() => {
-                tap();
-                cap.resetOnboarding();
-              }}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 10, alignSelf: 'flex-start', marginBottom: 44 }}
-            >
-              <View
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 44 }}>
+              <PressScale
+                testID="logo-to-onboarding"
+                accessibilityRole="button"
+                accessibilityLabel="Go to Get Started page"
+                onPress={() => {
+                  tap();
+                  cap.resetOnboarding();
+                }}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}
+              >
+                <View
+                  style={{
+                    width: 34,
+                    height: 34,
+                    borderRadius: 9,
+                    backgroundColor: '#FFFFFF',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Ionicons name="scan-outline" size={20} color="#080809" />
+                </View>
+                <Text
+                  accessibilityRole="header"
+                  style={{
+                    fontFamily: F.s,
+                    fontSize: 22,
+                    color: '#FFFFFF',
+                    letterSpacing: -0.4,
+                  }}
+                >
+                  SnapContact
+                </Text>
+              </PressScale>
+              {/* Plan status: trial days left / Pro, opens plans and payment */}
+              <PressScale
+                testID="plan-pill"
+                accessibilityRole="button"
+                accessibilityLabel="Plan and payment"
+                onPress={() => { tap(); setSubscriptionOpen(true); }}
                 style={{
-                  width: 34,
-                  height: 34,
-                  borderRadius: 9,
-                  backgroundColor: '#FFFFFF',
-                  alignItems: 'center',
-                  justifyContent: 'center',
+                  flexDirection: 'row', alignItems: 'center', gap: 6,
+                  paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999,
+                  backgroundColor: auth.subscription.status === 'expired' ? '#F59E0B' : 'rgba(255,255,255,0.14)',
+                  borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)',
                 }}
               >
-                <Ionicons name="scan-outline" size={20} color="#080809" />
-              </View>
-              <Text
-                accessibilityRole="header"
-                style={{
-                  fontFamily: F.s,
-                  fontSize: 22,
-                  color: '#FFFFFF',
-                  letterSpacing: -0.4,
-                }}
-              >
-                SnapContact
-              </Text>
-            </PressScale>
+                <Ionicons
+                  name={auth.subscription.status === 'annual' ? 'star' : 'time-outline'}
+                  size={14}
+                  color={auth.subscription.status === 'expired' ? '#080809' : '#FFFFFF'}
+                />
+                <Text style={{ fontFamily: F.s, fontSize: 12, color: auth.subscription.status === 'expired' ? '#080809' : '#FFFFFF' }}>
+                  {auth.subscription.status === 'annual'
+                    ? 'Pro'
+                    : auth.subscription.status === 'expired'
+                      ? 'Trial ended · Upgrade'
+                      : `Free trial · ${auth.subscription.trialDaysRemaining ?? 7}d left`}
+                </Text>
+              </PressScale>
+            </View>
 
             {/* Hero Headline: Your Screenshots Organized */}
             <Animated.View entering={FadeInDown.duration(400)}>
@@ -646,6 +685,11 @@ export default function Index() {
                 </PressScale>
               </View>
               <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ gap: 10 }}>
+                {searchHistory.length === 0 ? (
+                  <Text style={{ fontFamily: F.r, fontSize: 14, color: '#64748B' }}>
+                    No searches yet. Texts you search are listed here until you close the app.
+                  </Text>
+                ) : null}
                 {searchHistory.map((item, idx) => (
                   <PressScale
                     key={idx}
@@ -704,24 +748,16 @@ export default function Index() {
           onClose={() => setSubscriptionOpen(false)}
           subscription={auth.subscription}
           onOpenCashfree={() => setCashfreeOpen(true)}
-          onToggleAutoRenewal={auth.toggleAutoRenewal}
           userEmail={auth.user?.email}
-          onSimulateExpired={auth.simulateExpiredTrial}
-          onResetTrial={auth.resetTrial}
         />
         <CashfreeModal
           visible={cashfreeOpen}
           onClose={() => setCashfreeOpen(false)}
           customerEmail={auth.user?.email}
-          onSuccess={(result) => {
-            auth.activateAnnualSubscription(result);
-          }}
-          onFailure={(err) => {
-            setCashfreeOpen(false);
-            if (auth.user?.email) void auth.requestOtp(auth.user.email);
-            setPaymentVerifyOpen(true);
-            setOnboardingStep('auth');
-          }}
+          canPay={!!auth.user && !auth.isDemo}
+          price={auth.subscription.price ?? 99}
+          beginPayment={auth.beginPayment}
+          checkPayment={auth.checkPayment}
         />
       </View>
     );
@@ -1193,24 +1229,16 @@ export default function Index() {
         onClose={() => setSubscriptionOpen(false)}
         subscription={auth.subscription}
         onOpenCashfree={() => setCashfreeOpen(true)}
-        onToggleAutoRenewal={auth.toggleAutoRenewal}
         userEmail={auth.user?.email}
-        onSimulateExpired={auth.simulateExpiredTrial}
-        onResetTrial={auth.resetTrial}
       />
       <CashfreeModal
         visible={cashfreeOpen}
         onClose={() => setCashfreeOpen(false)}
         customerEmail={auth.user?.email}
-        onSuccess={(result) => {
-          auth.activateAnnualSubscription(result);
-        }}
-        onFailure={(err) => {
-          setCashfreeOpen(false);
-          if (auth.user?.email) void auth.requestOtp(auth.user.email);
-          setPaymentVerifyOpen(true);
-          setOnboardingStep('auth');
-        }}
+        canPay={!!auth.user && !auth.isDemo}
+        price={auth.subscription.price ?? 99}
+        beginPayment={auth.beginPayment}
+        checkPayment={auth.checkPayment}
       />
       {/* SCREEN 5: Saved Confirmation Page */}
       <SaveSummary visible={showSummary} saving={saving} outcomes={cap.outcomes} total={selected.length} onDone={() => setDismissed(cap.outcomes)} />

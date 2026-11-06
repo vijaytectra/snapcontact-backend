@@ -18,6 +18,8 @@ export type Cand = {
   message: string;
   extension?: string;
   countryLabel?: string;
+  company?: string;
+  designation?: string;
 };
 
 function BlackActionPill({
@@ -151,7 +153,7 @@ export function CandidateCard({
         </Text>
       </PressScale>
 
-      {/* Field 1: Business Name */}
+      {/* Field 1: Name (a person when one is found, otherwise the business) */}
       <View style={{ gap: 8 }}>
         <Text style={labelStyle}>
           {S.review.name}
@@ -166,6 +168,11 @@ export function CandidateCard({
           autoCapitalize="words"
           style={inputStyle}
         />
+        {cand.designation || (cand.company && cand.company !== cand.name) ? (
+          <Text testID={`role-${cand.id}`} style={{ fontSize: 13, color: '#64748B' }}>
+            {[cand.designation, cand.company && cand.company !== cand.name ? cand.company : null].filter(Boolean).join(' · ')}
+          </Text>
+        ) : null}
       </View>
 
       {/* Field 2: Phone Number */}

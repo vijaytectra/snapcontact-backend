@@ -11,7 +11,10 @@ import {
   storeUser,
 } from '@/lib/auth';
 import { ApiError, apiFetch } from '@/lib/api';
-import { CashfreePaymentResult } from '@/lib/cashfree';
+import { startCheckout, verifyPayment as verifyPaymentApi, type CheckoutSession, type PaymentOutcome } from '@/lib/cashfree';
+
+const TOKEN_KEY = 'snapcontact.token.v1';
+const REFRESH_KEY = 'snapcontact.refresh.v1';
 
 const DEMO_EMAIL = 'traveler@example.com';
 
@@ -25,6 +28,10 @@ export function useAuth() {
   const busyRef = useRef(false);
   // Session from a verified code, held until the user creates or resets their password.
   const pendingSessionRef = useRef<any>(null);
+  // Email whose magic link was verified and now needs a password (drives the auth screen).
+  const [pendingPasswordEmail, setPendingPasswordEmail] = useState<string | null>(null);
+  // Tokens also kept in memory: SecureStore is unavailable on web.
+  const tokensRef = useRef<{ token: string | null; refresh: string | null }>({ token: null, refresh: null });
 
   // Load stored user on mount
   useEffect(() => {
@@ -60,11 +67,15 @@ export function useAuth() {
       email: data.user.email,
       name: data.user.name,
       createdAt: new Date().toISOString(),
-      subscription: data.user.subscription || createDefaultTrialSubscription(),
+      // The server sends only the stored dates; work out days left and status here.
+      subscription: data.user.subscription
+        ? calculateSubscriptionState(data.user.subscription)
+        : createDefaultTrialSubscription(),
     };
     // SecureStore is unavailable on web; the profile alone keeps the user signed in there.
-    await SecureStore.setItemAsync('snapcontact.token.v1', data.token).catch(() => {});
-    if (data.refreshToken) await SecureStore.setItemAsync('snapcontact.refresh.v1', data.refreshToken).catch(() => {});
+    tokensRef.current = { token: data.token, refresh: data.refreshToken ?? tokensRef.current.refresh };
+    await SecureStore.setItemAsync(TOKEN_KEY, data.token).catch(() => {});
+    if (data.refreshToken) await SecureStore.setItemAsync(REFRESH_KEY, data.refreshToken).catch(() => {});
     await storeUser(profile);
     setUser(profile);
   }, []);
@@ -151,31 +162,30 @@ export function useAuth() {
     }
   }, [applySession]);
 
-  const verifyLink = useCallback(async (email: string, token: string): Promise<boolean> => {
+  /**
+   * Signs in from the emailed link. Like a code, a first sign-in holds the session until the
+   * user creates a password; `pendingPasswordEmail` tells the auth screen to show that step.
+   */
+  const verifyLink = useCallback(async (email: string, token: string): Promise<'signed-in' | 'needs-password' | false> => {
     if (busyRef.current) return false;
     busyRef.current = true;
     setAuthError(null);
     try {
-      const data = await apiFetch(`/auth/verify-link?email=${encodeURIComponent(email)}&token=${token}`);
-      const profile: UserProfile = {
-        id: data.user.id,
-        email: data.user.email,
-        name: data.user.name,
-        createdAt: new Date().toISOString(),
-        subscription: data.user.subscription || createDefaultTrialSubscription(),
-      };
-      await SecureStore.setItemAsync('snapcontact.token.v1', data.token);
-      if (data.refreshToken) await SecureStore.setItemAsync('snapcontact.refresh.v1', data.refreshToken);
-      await storeUser(profile);
-      setUser(profile);
-      return true;
+      const data = await apiFetch(`/auth/verify-link?email=${encodeURIComponent(email)}&token=${encodeURIComponent(token)}`);
+      if (data.needsPassword === true) {
+        pendingSessionRef.current = data;
+        setPendingPasswordEmail(data.user?.email ?? email);
+        return 'needs-password';
+      }
+      await applySession(data);
+      return 'signed-in';
     } catch (e: any) {
-      setAuthError(e?.message || 'Invalid link');
+      setAuthError(e?.message || 'This sign-in link is invalid or has expired. Request a new one.');
       return false;
     } finally {
       busyRef.current = false;
     }
-  }, []);
+  }, [applySession]);
 
   /**
    * Checks the emailed code. When the account still needs a password (first sign-in) or the code
@@ -222,6 +232,7 @@ export function useAuth() {
         body: JSON.stringify({ password }),
       });
       pendingSessionRef.current = null;
+      setPendingPasswordEmail(null);
       await applySession(data);
       return true;
     } catch (e: any) {
@@ -332,6 +343,9 @@ export function useAuth() {
   );
 
   const logout = useCallback(async () => {
+    tokensRef.current = { token: null, refresh: null };
+    pendingSessionRef.current = null;
+    setPendingPasswordEmail(null);
     await storeUser(null);
     // SecureStore is unavailable on web; a failed token delete must not leave the user signed in.
     await SecureStore.deleteItemAsync('snapcontact.token.v1').catch(() => {});
@@ -340,107 +354,83 @@ export function useAuth() {
     setGuestSubscription(createDefaultTrialSubscription());
   }, []);
 
-  const activateAnnualSubscription = useCallback(
-    async (paymentResult: CashfreePaymentResult): Promise<void> => {
-      const now = new Date();
-      const periodEnd = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000);
-      const renewalNotice = new Date(periodEnd.getTime() - 15 * 24 * 60 * 60 * 1000);
+  const logoutRef = useRef(logout);
+  logoutRef.current = logout;
 
-      const updatedSub: SubscriptionInfo = {
-        status: 'annual',
-        planName: 'Annual Pro Membership',
-        price: 99,
-        currency: 'INR',
-        trialStartDate: subscription.trialStartDate,
-        trialEndDate: subscription.trialEndDate,
-        trialDaysRemaining: 0,
-        isTrialActive: false,
-        currentPeriodStart: now.toISOString(),
-        currentPeriodEnd: periodEnd.toISOString(),
-        autoRenewal: true,
-        renewalNoticeDate: renewalNotice.toISOString(),
-        daysUntilRenewalNotice: Math.max(0, Math.ceil((renewalNotice.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))),
-        cashfreePaymentId: paymentResult.paymentId,
-        cashfreeOrderId: paymentResult.orderId,
-        cashfreePaymentMethod: `${paymentResult.paymentMethod} (${paymentResult.paymentDetails})`,
-      };
-
-      if (user) {
-        const updatedUser: UserProfile = {
-          ...user,
-          subscription: updatedSub,
-        };
-        await storeUser(updatedUser);
-        setUser(updatedUser);
-      } else {
-        setGuestSubscription(updatedSub);
-      }
-    },
-    [user, subscription]
-  );
-
-  const toggleAutoRenewal = useCallback(
-    async (enabled: boolean): Promise<void> => {
-      if (user) {
-        const updatedUser: UserProfile = {
-          ...user,
-          subscription: {
-            ...user.subscription,
-            autoRenewal: enabled,
-          },
-        };
-        await storeUser(updatedUser);
-        setUser(updatedUser);
-      } else {
-        setGuestSubscription((prev) => ({
-          ...prev,
-          autoRenewal: enabled,
-        }));
-      }
-    },
-    [user]
-  );
-
-  const simulateExpiredTrial = useCallback(async (): Promise<void> => {
-    const pastDate = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString();
-    const expiredSub = calculateSubscriptionState({
-      status: 'expired',
-      trialStartDate: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString(),
-      trialEndDate: pastDate,
-      isTrialActive: false,
-    });
-    if (user) {
-      const updatedUser: UserProfile = { ...user, subscription: expiredSub };
-      await storeUser(updatedUser);
-      setUser(updatedUser);
-    } else {
-      setGuestSubscription(expiredSub);
-    }
-  }, [user]);
-
-  const resetTrial = useCallback(async (): Promise<void> => {
-    const freshSub = createDefaultTrialSubscription();
-    if (user) {
-      const updatedUser: UserProfile = { ...user, subscription: freshSub };
-      await storeUser(updatedUser);
-      setUser(updatedUser);
-    } else {
-      setGuestSubscription(freshSub);
-    }
-  }, [user]);
-
+  /** New access token from the refresh token. False when the session is gone for good. */
   const refreshSession = useCallback(async (): Promise<boolean> => {
+    const rt = tokensRef.current.refresh ?? await SecureStore.getItemAsync(REFRESH_KEY).catch(() => null);
+    if (!rt) return false;
     try {
-      const rt = await SecureStore.getItemAsync('snapcontact.refresh.v1');
-      if (!rt) return false;
       const data = await apiFetch('/auth/refresh', { method: 'POST', body: JSON.stringify({ refreshToken: rt }) });
-      await SecureStore.setItemAsync('snapcontact.token.v1', data.token);
-      if (data.refreshToken) await SecureStore.setItemAsync('snapcontact.refresh.v1', data.refreshToken);
+      tokensRef.current = { token: data.token, refresh: data.refreshToken ?? rt };
+      await SecureStore.setItemAsync(TOKEN_KEY, data.token).catch(() => {});
+      if (data.refreshToken) await SecureStore.setItemAsync(REFRESH_KEY, data.refreshToken).catch(() => {});
       return true;
-    } catch {
-      return false;
+    } catch (e) {
+      if (e instanceof ApiError && (e.status === 401 || e.status === 403)) return false;
+      throw e; // offline or server down: keep the session, try later
     }
   }, []);
+
+  /**
+   * Calls the API as the signed-in user. An expired access token is refreshed once; if the
+   * session is revoked, the user is signed out (SESSION_EXPIRED) instead of keeping stale access.
+   */
+  const authedFetch = useCallback(async (path: string, options: RequestInit = {}) => {
+    const call = async () => {
+      const token = tokensRef.current.token ?? await SecureStore.getItemAsync(TOKEN_KEY).catch(() => null);
+      // No stored token (e.g. web, where SecureStore is unavailable): not proof the session is
+      // revoked, so don't sign out; only a 401 from the server does that.
+      if (!token) throw new ApiError('Please sign in again to continue.', 0, 'NO_SESSION_TOKEN');
+      return apiFetch(path, { ...options, headers: { ...(options.headers || {}), Authorization: `Bearer ${token}` } });
+    };
+    try {
+      return await call();
+    } catch (e) {
+      if (!(e instanceof ApiError) || e.status !== 401) throw e;
+      if (await refreshSession()) return call();
+      await logoutRef.current();
+      throw new ApiError('Your session has expired. Please sign in again.', 401, 'SESSION_EXPIRED');
+    }
+  }, [refreshSession]);
+
+  /** Replaces the cached profile and plan with what the server says. */
+  const refreshProfile = useCallback(async (): Promise<boolean> => {
+    const data = await authedFetch('/auth/me');
+    const current = await getStoredUser();
+    const profile: UserProfile = {
+      id: data.user.id,
+      email: data.user.email,
+      name: data.user.name,
+      createdAt: current?.createdAt ?? new Date().toISOString(),
+      subscription: calculateSubscriptionState(data.user.subscription),
+    };
+    await storeUser(profile);
+    setUser(profile);
+    return true;
+  }, [authedFetch]);
+
+  /** Opens a server-created Cashfree order. Requires a signed-in (server) account. */
+  const beginPayment = useCallback(async (phone: string): Promise<CheckoutSession> => {
+    return startCheckout(authedFetch, phone);
+  }, [authedFetch]);
+
+  /** Asks the server whether the order is paid; refreshes the plan when it is. */
+  const checkPayment = useCallback(async (orderId: string): Promise<PaymentOutcome> => {
+    const outcome = await verifyPaymentApi(authedFetch, orderId);
+    if (outcome === 'paid') await refreshProfile().catch(() => {});
+    return outcome;
+  }, [authedFetch, refreshProfile]);
+
+  // On launch, replace the cached plan with the server's (reinstall, another device, a payment
+  // confirmed by webhook). Offline, the cached copy is shown until the server can be reached.
+  const syncedRef = useRef(false);
+  useEffect(() => {
+    if (isLoading || !user || syncedRef.current || user.email.toLowerCase() === DEMO_EMAIL) return;
+    syncedRef.current = true;
+    refreshProfile().catch(() => { /* offline: keep cached copy; expired sessions already signed out */ });
+  }, [isLoading, user, refreshProfile]);
 
   const clearAuthError = useCallback(() => {
     setAuthError(null);
@@ -461,10 +451,12 @@ export function useAuth() {
     signInWithGoogle,
     verifyLink,
     logout,
-    activateAnnualSubscription,
-    toggleAutoRenewal,
-    simulateExpiredTrial,
-    resetTrial,
+    refreshProfile,
+    beginPayment,
+    checkPayment,
+    pendingPasswordEmail,
+    /** The on-device demo profile: no server account, so it cannot pay or sync. */
+    isDemo: !!user && user.email.toLowerCase() === DEMO_EMAIL,
     clearAuthError,
     refreshSession,
   };
