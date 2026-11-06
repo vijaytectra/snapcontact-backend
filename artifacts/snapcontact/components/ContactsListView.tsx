@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
-import { ScrollView, Text, TextInput, View } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import Animated, { FadeInDown } from 'react-native-reanimated';
 import { Cand } from './CandidateCard';
 import { F, LightCheckbox, PressScale, tap } from './ui';
+import { EXCLUSION_LABEL, summarizeContacts, type ExclusionReason } from '@/lib/contactSummary';
 
 function getInitials(name: string, fallbackNumber: string): string {
   if (name && name.trim()) {
@@ -17,6 +17,21 @@ function getInitials(name: string, fallbackNumber: string): string {
   return digits.substring(0, 2) || 'C';
 }
 
+function Stat({ label, value, testID }: { label: string; value: number; testID: string }) {
+  return (
+    <View testID={testID} accessible accessibilityLabel={`${label}: ${value}`} style={{ flex: 1, gap: 2 }}>
+      <Text style={{ fontFamily: F.b, fontSize: 26, color: '#0F172A' }}>{value}</Text>
+      <Text style={{ fontFamily: F.m, fontSize: 12, color: '#64748B' }}>{label}</Text>
+    </View>
+  );
+}
+
+/**
+ * Review step for a batch of contacts. The top shows the three counts (detected, proper, save
+ * total). Proper contacts follow as cards. Excluded entries stay visible with the reason they
+ * cannot be saved, so nothing is dropped silently. The rows are plain views, not a FlatList,
+ * because this list already sits inside the screen's scroll view.
+ */
 export function ContactsListView({
   candidates,
   onToggle,
@@ -33,20 +48,103 @@ export function ContactsListView({
   onDeleteSelected?: () => void;
 }) {
   const [searchQuery, setSearchQuery] = useState('');
+  const [showExcluded, setShowExcluded] = useState(false);
+  const summary = useMemo(() => summarizeContacts(candidates), [candidates]);
+  const indexById = useMemo(() => new Map(candidates.map((c, i) => [c.id, i])), [candidates]);
 
-  const filtered = candidates.filter((c) => {
-    if (!searchQuery.trim()) return true;
-    const q = searchQuery.toLowerCase();
+  const query = searchQuery.trim().toLowerCase();
+  const matches = (c: Cand) => !query
+    || c.name.toLowerCase().includes(query)
+    || c.number.includes(query)
+    || (c.formatted ?? '').toLowerCase().includes(query)
+    || (c.email ?? '').toLowerCase().includes(query);
+  const properRows = summary.proper.filter(matches);
+  const excludedRows = summary.excluded.filter(({ candidate }) => matches(candidate));
+  const reasons = (Object.keys(EXCLUSION_LABEL) as ExclusionReason[]).filter((r) => summary.excludedCounts[r] > 0);
+
+  const renderProper = (cand: Cand) => {
+    const initials = getInitials(cand.name, cand.number);
     return (
-      c.name.toLowerCase().includes(q) ||
-      c.number.includes(q) ||
-      (c.formatted && c.formatted.includes(q))
+      <View
+        key={cand.id}
+        style={{
+          backgroundColor: '#FFFFFF',
+          borderRadius: 14,
+          borderWidth: 1,
+          borderColor: '#DDE3EA',
+          paddingLeft: 8,
+          paddingRight: 14,
+          minHeight: 66,
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 10,
+        }}
+      >
+        <LightCheckbox
+          testID={`list-select-${cand.id}`}
+          checked={cand.selected}
+          onChange={(val) => onToggle(cand.id, val)}
+          label={`Select ${cand.name || cand.number}`}
+        />
+
+        <View
+          style={{
+            width: 40,
+            height: 40,
+            borderRadius: 20,
+            backgroundColor: '#FFFFFF',
+            borderWidth: 1,
+            borderColor: '#222222',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <Text style={{ fontFamily: F.s, fontSize: 13, color: '#111111' }}>{initials}</Text>
+        </View>
+
+        <View style={{ flex: 1, gap: 2 }}>
+          <Text numberOfLines={1} style={{ fontFamily: F.m, fontSize: 16, color: '#2B5EA7' }}>
+            {cand.name}
+          </Text>
+          <Text numberOfLines={1} style={{ fontFamily: F.m, fontSize: 15, color: '#111111' }}>
+            {cand.formatted || cand.number}
+          </Text>
+        </View>
+
+        <PressScale
+          testID={`edit-card-${cand.id}`}
+          accessibilityRole="button"
+          accessibilityLabel={`Edit contact ${cand.name || cand.number}`}
+          onPress={() => {
+            tap();
+            onSelectCandidate(indexById.get(cand.id) ?? 0);
+          }}
+          style={{ width: 36, height: 36, alignItems: 'center', justifyContent: 'center' }}
+        >
+          <Ionicons name="pencil" size={18} color="#111111" />
+        </PressScale>
+      </View>
     );
-  });
+  };
 
   return (
-    <View style={{ flex: 1, gap: 14 }}>
-      {/* Search Input Bar */}
+    <View testID="contacts-list" style={{ gap: 14 }}>
+      {/* Counts, in order: detected, proper, save total */}
+      <View
+        testID="batch-summary"
+        style={{ backgroundColor: '#FFFFFF', borderRadius: 16, borderWidth: 1, borderColor: '#DDE3EA', padding: 16, gap: 12 }}
+      >
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          <Stat testID="summary-detected" label="Detected" value={summary.detected} />
+          <Stat testID="summary-proper" label="Proper contacts" value={summary.savable} />
+          <Stat testID="summary-save-total" label="Save total" value={summary.saveTotal} />
+        </View>
+        <Text testID="summary-reconcile" style={{ fontFamily: F.r, fontSize: 12, color: '#64748B' }}>
+          {`${summary.detected} detected = ${summary.savable} proper + ${summary.excluded.length} excluded`}
+        </Text>
+      </View>
+
+      {/* Search */}
       <View
         style={{
           flexDirection: 'row',
@@ -66,13 +164,7 @@ export function ContactsListView({
           onChangeText={setSearchQuery}
           placeholder="Search name or phone number"
           placeholderTextColor="#8A8F98"
-          style={{
-            flex: 1,
-            fontFamily: F.r,
-            fontSize: 15,
-            color: '#0F172A',
-            height: '100%',
-          }}
+          style={{ flex: 1, fontFamily: F.r, fontSize: 15, color: '#0F172A', height: '100%' }}
         />
         <PressScale
           onPress={() => setSearchQuery('')}
@@ -84,26 +176,17 @@ export function ContactsListView({
         </PressScale>
       </View>
 
-      {/* Select All & Delete Action Row */}
-      <View
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginTop: -4,
-          marginBottom: -4,
-        }}
-      >
+      {/* Select all (proper contacts only) and delete */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
           <LightCheckbox
             testID="select-all-checkbox"
             checked={allSelected}
+            disabled={summary.savable === 0}
             onChange={onToggleAll}
-            label="Select all contacts"
+            label="Select all proper contacts"
           />
-          <Text style={{ fontFamily: F.m, fontSize: 14, color: '#111111' }}>
-            Select All
-          </Text>
+          <Text style={{ fontFamily: F.m, fontSize: 14, color: '#111111' }}>Select All</Text>
         </View>
 
         {onDeleteSelected ? (
@@ -124,141 +207,84 @@ export function ContactsListView({
               backgroundColor: '#FFFFFF',
             }}
           >
-            <Text style={{ fontFamily: F.m, fontSize: 12, color: '#111111' }}>
-              Delete
-            </Text>
+            <Text style={{ fontFamily: F.m, fontSize: 12, color: '#111111' }}>Delete</Text>
           </PressScale>
         ) : null}
       </View>
 
-      {/* Contacts List */}
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ gap: 10, paddingBottom: 20 }}
-      >
-        {filtered.map((cand, idx) => {
-          const initials = getInitials(cand.name, cand.number);
-          const originalIndex = candidates.findIndex((c) => c.id === cand.id);
+      <Text style={{ fontFamily: F.s, fontSize: 13, color: '#111111' }}>
+        {`Proper contacts (${properRows.length})`}
+      </Text>
 
-          return (
-            <Animated.View
-              key={cand.id}
-              entering={FadeInDown.delay(Math.min(idx, 8) * 40).duration(300)}
-              style={{
-                backgroundColor: '#FFFFFF',
-                borderRadius: 14,
-                borderWidth: 1,
-                borderColor: '#DDE3EA',
-                paddingLeft: 8,
-                paddingRight: 14,
-                minHeight: 66,
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 10,
-              }}
+      <View style={{ gap: 10 }}>
+        {properRows.length === 0 ? (
+          <View style={{ padding: 24, alignItems: 'center' }}>
+            <Text style={{ fontFamily: F.r, fontSize: 14, color: '#94A3B8', textAlign: 'center' }}>
+              {query ? `No contacts match "${searchQuery}"` : 'No proper contacts. Open "Not saved" to add missing names or numbers.'}
+            </Text>
+          </View>
+        ) : properRows.map(renderProper)}
+      </View>
+
+      {/* Excluded entries: kept visible with the reason */}
+      {summary.excluded.length > 0 ? (
+        <View testID="excluded-section" style={{ backgroundColor: '#FFFFFF', borderRadius: 16, borderWidth: 1, borderColor: '#DDE3EA', padding: 14, gap: 10 }}>
+          <PressScale
+            testID="toggle-excluded"
+            accessibilityRole="button"
+            accessibilityState={{ expanded: showExcluded }}
+            onPress={() => {
+              tap();
+              setShowExcluded(!showExcluded);
+            }}
+            style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+          >
+            <Text style={{ fontFamily: F.s, fontSize: 14, color: '#111111' }}>
+              {`Not saved (${summary.excluded.length})`}
+            </Text>
+            <Ionicons name={showExcluded ? 'chevron-up' : 'chevron-down'} size={18} color="#111111" />
+          </PressScale>
+          <View style={{ gap: 4 }}>
+            {reasons.map((reason) => (
+              <Text key={reason} testID={`excluded-${reason}`} style={{ fontFamily: F.r, fontSize: 13, color: '#475569' }}>
+                {`${EXCLUSION_LABEL[reason]}: ${summary.excludedCounts[reason]}`}
+              </Text>
+            ))}
+          </View>
+
+          {showExcluded ? excludedRows.map(({ candidate, reason }) => (
+            <View
+              key={candidate.id}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#EEF2F6' }}
             >
-              {/* Checkbox */}
-              <LightCheckbox
-                testID={`list-select-${cand.id}`}
-                checked={cand.selected}
-                disabled={!cand.valid}
-                onChange={(val) => onToggle(cand.id, val)}
-                label={`Select ${cand.name || cand.number}`}
-              />
-
-              {/* Initials Avatar Badge */}
-              <View
-                style={{
-                  width: 40,
-                  height: 40,
-                  borderRadius: 20,
-                  backgroundColor: '#FFFFFF',
-                  borderWidth: 1,
-                  borderColor: '#222222',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                <Text style={{ fontFamily: F.s, fontSize: 13, color: '#111111' }}>
-                  {initials}
-                </Text>
-              </View>
-
-              {/* Name & Phone Details */}
               <View style={{ flex: 1, gap: 2 }}>
-                <Text
-                  numberOfLines={1}
-                  style={{
-                    fontFamily: F.m,
-                    fontSize: 16,
-                    color: '#2B5EA7',
-                  }}
-                >
-                  {cand.name || 'Unnamed Contact'}
+                <Text numberOfLines={1} style={{ fontFamily: F.m, fontSize: 15, color: '#111111' }}>
+                  {candidate.formatted || candidate.number || candidate.email || candidate.website || 'Entry'}
                 </Text>
-                <Text
-                  numberOfLines={1}
-                  style={{
-                    fontFamily: F.m,
-                    fontSize: 15,
-                    color: '#111111',
-                  }}
-                >
-                  {cand.formatted || cand.number}
+                <Text numberOfLines={1} style={{ fontFamily: F.r, fontSize: 12, color: '#B45309' }}>
+                  {EXCLUSION_LABEL[reason]}
                 </Text>
               </View>
-
-              {/* Pencil Edit Icon Button */}
               <PressScale
-                testID={`edit-card-${cand.id}`}
+                testID={`edit-excluded-${candidate.id}`}
                 accessibilityRole="button"
-                accessibilityLabel={`Edit contact ${cand.name || cand.number}`}
+                accessibilityLabel={`Edit entry: ${EXCLUSION_LABEL[reason]}`}
                 onPress={() => {
                   tap();
-                  onSelectCandidate(originalIndex);
+                  onSelectCandidate(indexById.get(candidate.id) ?? 0);
                 }}
-                style={{
-                  width: 36,
-                  height: 36,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
+                style={{ width: 36, height: 36, alignItems: 'center', justifyContent: 'center' }}
               >
                 <Ionicons name="pencil" size={18} color="#111111" />
               </PressScale>
-            </Animated.View>
-          );
-        })}
-
-        {filtered.length === 0 ? (
-          <View style={{ padding: 32, alignItems: 'center' }}>
-            <Text style={{ fontFamily: F.r, fontSize: 14, color: '#94A3B8' }}>
-              No contacts match "{searchQuery}"
-            </Text>
-          </View>
-        ) : null}
-
-        {/* Verification Status Banner */}
-        <View
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 8,
-            paddingVertical: 7,
-            borderRadius: 10,
-            borderWidth: 1,
-            borderColor: '#DDE3EA',
-            backgroundColor: '#FFFFFF',
-          }}
-        >
-          <Ionicons name="checkmark-circle-outline" size={17} color="#2563EB" />
-          <Text style={{ fontFamily: F.m, fontSize: 12, color: '#111111' }}>
-            All numbers verified • No duplicates found
-          </Text>
+            </View>
+          )) : null}
         </View>
-      </ScrollView>
+      ) : null}
+
+      <Text style={{ fontFamily: F.r, fontSize: 12, color: '#64748B', textAlign: 'center' }}>
+        Each contact is checked before saving: it needs a name and a valid phone number.
+      </Text>
     </View>
   );
 }
-

@@ -189,7 +189,8 @@ test('standalone email and website without phone numbers creates a contact candi
   assert.equal(candidates[0].email, 'hello@studio.design');
   assert.equal(candidates[0].website, 'www.studio.design');
   assert.equal(candidates[0].valid, true);
-  assert.equal(candidates[0].selected, true);
+  // A contact needs a phone number to be saved, so this one is listed as excluded, not selected.
+  assert.equal(candidates[0].selected, false);
 });
 
 

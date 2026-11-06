@@ -5,6 +5,17 @@ import { useColors } from '@/hooks/useColors';
 import { S } from '@/lib/strings';
 import { Button, F, IconButton, PressScale, tap, useInsets } from './ui';
 import { UserProfile, SubscriptionInfo } from '@/lib/auth';
+import { BUILD_INFO } from '@/lib/buildInfo';
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** "6 Nov 2026, 14:32" in the phone's own time zone. */
+function formatBuildTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return 'unknown';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}, ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
 
 const SECTION_ICONS: Record<string, React.ComponentProps<typeof Ionicons>['name']> = {
   'On-device reading': 'hardware-chip-outline',
@@ -248,6 +259,19 @@ export function SettingsModal({
                 variant="secondary"
                 onPress={onOpenSettings}
               />
+            </View>
+            <View
+              testID="app-version"
+              accessible
+              accessibilityLabel={`SnapContact version ${BUILD_INFO.version}, built ${formatBuildTime(BUILD_INFO.builtAt)}`}
+              style={{ alignItems: 'center', marginTop: 8, gap: 2 }}
+            >
+              <Text style={{ fontFamily: F.m, fontSize: 12, color: c.mutedForeground }}>
+                SnapContact version {BUILD_INFO.version}
+              </Text>
+              <Text style={{ fontFamily: F.r, fontSize: 12, color: c.mutedForeground }}>
+                Built {formatBuildTime(BUILD_INFO.builtAt)}
+              </Text>
             </View>
           </ScrollView>
         </View>

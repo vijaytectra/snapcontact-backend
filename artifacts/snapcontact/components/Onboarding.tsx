@@ -2,20 +2,26 @@ import React from 'react';
 import { View, Text, Image, StyleSheet, useWindowDimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import Animated, { FadeInDown } from 'react-native-reanimated';
+import Animated, { FadeInDown, useReducedMotion } from 'react-native-reanimated';
 import { F, PressScale, tap, useInsets } from './ui';
 
 // The background artwork is a 390x844 composition; its phones start at y=258.
 const ART_W = 390;
 const ART_H = 844;
 const ART_PHONES_TOP = 258;
-// Height of the logo + headline + subtitle block at scale 1.
+// Fallback height of the logo + headline + subtitle block at scale 1, used until it is measured.
 const TEXT_BLOCK_H = 186;
+// Narrowest the text column should get, so headlines do not wrap one word per line (landscape).
+const MIN_TEXT_W = 300;
+// Users' larger system fonts are honoured, but capped so the fixed-scale layout does not break.
+const MAX_FONT_SCALE = 1.25;
 const BG = '#061738';
 
 export function Onboarding({ onDone }: { onDone: () => void }) {
   const i = useInsets();
   const { height: windowHeight, width: windowWidth } = useWindowDimensions();
+  const reduceMotion = useReducedMotion();
+  const [measuredTextH, setMeasuredTextH] = React.useState<number | null>(null);
 
   // The artwork always fills the screen height, so it scales with height.
   // On taller-than-design screens it is cropped at the sides; on wider ones it
@@ -23,11 +29,18 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
   const k = windowHeight / ART_H;
   const artWidth = ART_W * k;
   const boxWidth = Math.min(windowWidth, artWidth);
-  const s = Math.max(0.72, Math.min(1, k, windowWidth / ART_W));
+  // Scale floor lowered so short (landscape) screens shrink the content instead of overflowing.
+  const s = Math.max(0.55, Math.min(1, k, windowWidth / ART_W));
   const letterboxed = artWidth < windowWidth - 1;
+  // Text column: the artwork column, but never narrower than MIN_TEXT_W (or the screen).
+  const textW = Math.min(windowWidth - 32, Math.max(boxWidth, MIN_TEXT_W));
 
-  // Keep the text clear of the phones, even when the top inset is large.
-  const textTop = Math.max(16, Math.min(i.top, ART_PHONES_TOP * k - TEXT_BLOCK_H * s - 12));
+  // Keep the text clear of the phones, even when the top inset is large. Uses the measured
+  // height, so wrapped text (landscape, large fonts) is accounted for.
+  const textBlockH = measuredTextH ?? TEXT_BLOCK_H * s;
+  const textTop = Math.max(16, Math.min(i.top, ART_PHONES_TOP * k - textBlockH - 12));
+  const entering = (delay: number, duration: number) =>
+    reduceMotion ? undefined : FadeInDown.delay(delay).duration(duration);
 
   return (
     <View
@@ -88,13 +101,17 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
 
       {/* 3. Header & Typography, in the same column as the artwork */}
       <Animated.View
-        entering={FadeInDown.duration(450)}
+        entering={entering(0, 450)}
+        onLayout={e => {
+          const h = Math.round(e.nativeEvent.layout.height);
+          if (h !== measuredTextH) setMeasuredTextH(h);
+        }}
         style={{
           position: 'absolute',
           zIndex: 2,
           top: textTop,
-          width: boxWidth,
-          left: (windowWidth - boxWidth) / 2,
+          width: textW,
+          left: (windowWidth - textW) / 2,
           paddingHorizontal: 24 * s,
         }}
       >
@@ -120,6 +137,7 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
             <Ionicons name="scan-outline" size={20 * s} color="#080809" />
           </View>
           <Text
+            maxFontSizeMultiplier={MAX_FONT_SCALE}
             style={{
               color: '#FFFFFF',
               fontFamily: F.s,
@@ -134,6 +152,7 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
         {/* Main Headline with Sky Blue Accent */}
         <Text
           accessibilityRole="header"
+          maxFontSizeMultiplier={MAX_FONT_SCALE}
           style={{
             fontFamily: F.b,
             fontSize: 30 * s,
@@ -149,6 +168,7 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
 
         {/* Supporting Subtitle */}
         <Text
+          maxFontSizeMultiplier={MAX_FONT_SCALE}
           style={{
             color: '#E2E8F0',
             fontFamily: F.r,
@@ -163,7 +183,7 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
 
       {/* 4. Footer: Get Started, anchored near the bottom of the same column */}
       <Animated.View
-        entering={FadeInDown.delay(350).duration(450)}
+        entering={entering(350, 450)}
         style={{
           position: 'absolute',
           zIndex: 3,
@@ -198,6 +218,7 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
           }}
         >
           <Text
+            maxFontSizeMultiplier={MAX_FONT_SCALE}
             style={{
               color: '#111111',
               fontFamily: F.m,
@@ -207,7 +228,7 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
           >
             Get Started
           </Text>
-          <Ionicons name="arrow-forward" size={12} color="#111111" />
+          <Ionicons name="arrow-forward" size={Math.round(12 * s)} color="#111111" />
         </PressScale>
       </Animated.View>
     </View>

@@ -8,8 +8,9 @@ import { getCountries, type CountryCode } from 'libphonenumber-js/max';
 import { countryOptions, extractCandidates, prepareNumberCopy, validateInContext, type Candidate, type CountryOption } from '@/lib/phone';
 import * as device from '@/lib/device';
 import { runContactQueue } from '@/lib/contactQueue';
-import { addToOfflineQueue, getOfflineQueue, clearOfflineQueue, removeFromOfflineQueue } from '@/lib/offlineQueue';
+import { addToOfflineQueue, getOfflineQueue, removeFromOfflineQueue, removeManyFromOfflineQueue } from '@/lib/offlineQueue';
 import { R } from '@/lib/runtimeStrings';
+import { isProper } from '@/lib/contactSummary';
 
 export type { Candidate, CountryOption };
 type Phase = 'idle' | 'processing' | 'review' | 'saving';
@@ -65,13 +66,22 @@ export function useCapture() {
           setNotice(`Retrying recognition (attempt ${attempt + 1} of ${MAX_RETRIES + 1})…`);
           await new Promise(r => setTimeout(r, 500 * attempt));
         }
-        const recognized = await Promise.race([
-          device.recognize(uri, value => {
-            if (ticket === generation.current) setOcrProgress(value);
-          }),
-          new Promise<string>((_, reject) => setTimeout(() => reject(new Error('OCR timed out. Please try a clearer image.')), 30000)),
-        ]);
-        if (ticket !== generation.current) { busy.current = false; return; }
+        // The timeout is cleared once recognition settles, so no stray 30s timer is left behind.
+        let ocrTimer: ReturnType<typeof setTimeout> | undefined;
+        let recognized: string;
+        try {
+          recognized = await Promise.race([
+            device.recognize(uri, value => {
+              if (ticket === generation.current) setOcrProgress(value);
+            }),
+            new Promise<string>((_, reject) => {
+              ocrTimer = setTimeout(() => reject(new Error('OCR timed out. Please try a clearer image.')), 30000);
+            }),
+          ]);
+        } finally {
+          clearTimeout(ocrTimer);
+        }
+        if (ticket !== generation.current) return;
         setText(recognized);
         setCandidates(extractCandidates(recognized, countryRef.current));
         setPhase('review');
@@ -80,7 +90,7 @@ export function useCapture() {
         break;
       } catch (err) {
         lastErr = err;
-        if (ticket !== generation.current) { busy.current = false; return; }
+        if (ticket !== generation.current) return;
         // These native errors come out the same on every try, so show them now
         // instead of making the user sit through retries.
         const code = (err as { code?: string } | null)?.code;
@@ -112,10 +122,15 @@ export function useCapture() {
     return () => { live = false; generation.current++; };
   }, []);
 
-  const handleCapturedText = useCallback((capturedText: string) => {
-    if (!capturedText) return;
+  /** Returns false when a save is running and the capture was not shown (the caller keeps it). */
+  const handleCapturedText = useCallback((capturedText: string): boolean => {
+    if (!capturedText) return true;
+    // A save is still running: replacing the screen now would pull the rows out from under it.
+    if (busy.current) {
+      setNotice('Finish saving first. The new capture will appear once the save is done.');
+      return false;
+    }
     generation.current++;
-    busy.current = false;
     imageRef.current = null;
     setImageUri(null);
     setText(capturedText);
@@ -129,6 +144,7 @@ export function useCapture() {
     } else {
       setNotice(R.screenCaptured);
     }
+    return true;
   }, []);
 
   useEffect(() => {
@@ -139,7 +155,8 @@ export function useCapture() {
         // Check for persistent pending Quick Capture result
         const pendingCapturedText = device.getPendingCaptureResult();
         if (pendingCapturedText) {
-          handleCapturedText(pendingCapturedText);
+          // Cleared once shown; otherwise every return to the app would reset the review screen.
+          if (handleCapturedText(pendingCapturedText)) device.clearPendingCaptureResult();
           return;
         }
         if (imageRef.current) return;
@@ -190,8 +207,8 @@ export function useCapture() {
     });
 
     const unsubCaptured = device.addQuickCaptureListener('onScreenCaptured', (data: { text: string }) => {
-      device.clearPendingCaptureResult();
-      handleCapturedText(data?.text ?? '');
+      // If a save is running, the capture stays stored and is shown when the save finishes.
+      if (handleCapturedText(data?.text ?? '')) device.clearPendingCaptureResult();
     });
 
     return () => {
@@ -259,20 +276,26 @@ export function useCapture() {
       const check = merged.number
         ? validateInContext(merged.number, countryRef.current, merged.countryHints)
         : { valid: Boolean(merged.email || merged.website), formatted: merged.email || merged.website || '', message: '', extension: undefined, countryLabel: '', country: undefined, callingCode: undefined, countryName: '', international: false };
-      return { ...merged, valid: check.valid, formatted: check.formatted, message: check.message,
+      const updated = { ...merged, valid: check.valid, formatted: check.formatted, message: check.message,
         extension: check.extension, countryLabel: check.countryLabel, country: check.country,
-        callingCode: check.callingCode, countryName: check.countryName, international: check.international,
-        selected: check.valid && (merged.selected ?? true) };
+        callingCode: check.callingCode, countryName: check.countryName, international: check.international };
+      // A row that becomes savable (a name or number was just added) is selected, unless the user said otherwise.
+      const becameProper = !isProper(row) && isProper(updated);
+      const wanted = patch.selected ?? (becameProper || merged.selected === true);
+      return { ...updated, selected: wanted && isProper(updated) };
     }));
   };
   const selectAll = (selected: boolean) => {
-    if (!busy.current) setCandidates(rows => rows.map(row => ({ ...row, selected: selected && row.valid })));
+    if (!busy.current) setCandidates(rows => rows.map(row => ({ ...row, selected: selected && isProper(row) })));
   };
   const saveSelected = async () => {
     if (busy.current) return;
-    const chosen = candidates.filter(row => row.selected && row.valid);
+    const chosen = candidates.filter(row => row.selected && isProper(row));
     if (!chosen.length) { setError(R.selectNumber); return; }
     busy.current = true; setPhase('saving'); setError(null); setOutcomes([]); setNotice(null);
+    // Never drop a selection silently: say how many were left out and why.
+    const left = candidates.filter(row => row.selected && !isProper(row)).length;
+    if (left) setNotice(`${left} selected ${left === 1 ? 'entry was' : 'entries were'} not saved: each needs a name and a valid number.`);
     const requests = chosen.flatMap(row => {
       const checked = validateInContext(row.number, countryRef.current, row.countryHints);
       return checked.valid ? [{
@@ -280,49 +303,44 @@ export function useCapture() {
         number: checked.e164 + (checked.extension ? `;ext=${checked.extension}` : ''),
       }] : [];
     });
+    // Persist the selection before any editor opens: if the app is killed mid-save, the
+    // unfinished contacts are retried on the next launch instead of being lost.
+    await addToOfflineQueue(requests).catch(() => undefined);
+    // Entries left by an unfinished earlier save go out with this one, but only now that the user
+    // has tapped Save. They are not reopened on their own (no editors on launch or resume).
+    const onScreen = new Set(requests.map(r => r.id));
+    const leftovers = (await getOfflineQueue().catch(() => [])).filter(r => !onScreen.has(r.id));
     try {
-      await runContactQueue(requests, device.createContact, result => {
+      await runContactQueue([...leftovers, ...requests], device.createContact, result => {
         setOutcomes(old => [...old, result]);
-        if (result.status === 'saved') setCandidates(old => old.map(c => c.id === result.id ? { ...c, selected: false } : c));
+        if (result.status === 'saved') {
+          void removeFromOfflineQueue(result.id).catch(() => undefined);
+          setCandidates(old => old.map(c => c.id === result.id ? { ...c, selected: false } : c));
+        }
         if (result.status === 'cancelled') {
           setNotice(R.saveUnconfirmed);
         }
         if (result.status === 'error') setError(result.message ?? R.editorUnavailable);
       });
-    } catch (err) {
-      // Queue for later retry when the editor is unavailable / app interrupted
-      await addToOfflineQueue(requests);
-      setError(R.editorUnavailable);
-    } finally { busy.current = false; setPhase('review'); }
-  };
-  const processOfflineQueue = useCallback(async () => {
-    if (busy.current) return;
-    const pending = await getOfflineQueue();
-    if (!pending.length) return;
-    busy.current = true;
-    try {
-      await runContactQueue(pending, device.createContact, result => {
-        if (result.status === 'saved') void removeFromOfflineQueue(result.id);
-        if (result.status === 'cancelled' || result.status === 'error') {
-          // keep in queue for next attempt
-        }
-      });
-      const remaining = await getOfflineQueue();
-      if (remaining.length === 0) await clearOfflineQueue();
-    } catch {
-      // leave queue intact
     } finally {
-      busy.current = false;
+      // Rows still on screen belong to the screen again, so their persisted copies go. Leftovers
+      // that were not saved stay queued for the next Save.
+      await removeManyFromOfflineQueue(requests.map(r => r.id)).catch(() => undefined);
+      busy.current = false; setPhase('review');
+      // A Quick Capture that arrived during the save was held back; show it now.
+      const held = device.getPendingCaptureResult();
+      if (held && handleCapturedText(held)) device.clearPendingCaptureResult();
     }
-  }, []);
+  };
 
+  // Tell the user about unfinished contacts from an earlier session, without opening anything.
   useEffect(() => {
-    processOfflineQueue();
-    const sub = AppState.addEventListener('change', state => {
-      if (state === 'active') processOfflineQueue();
-    });
-    return () => sub.remove();
-  }, [processOfflineQueue]);
+    getOfflineQueue().then(pending => {
+      if (pending.length) {
+        setNotice(`${pending.length} contact${pending.length === 1 ? '' : 's'} from an unfinished save will be included the next time you tap Save.`);
+      }
+    }).catch(() => undefined);
+  }, []);
 
   const clear = () => {
     if (busy.current && phase === 'saving') return;

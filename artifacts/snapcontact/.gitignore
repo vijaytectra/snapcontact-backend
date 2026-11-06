@@ -24,6 +24,9 @@ build/
 # Metro
 .metro-health-check*
 
+# Written on every build (scripts/write-build-info.js)
+lib/buildInfo.ts
+
 # debug
 npm-debug.*
 yarn-debug.*

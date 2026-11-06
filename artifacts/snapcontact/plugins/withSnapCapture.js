@@ -86,6 +86,9 @@ function withSnapCapture(config) {
           'android:name': 'com.snapcontact.capture.MediaProjectionConsentActivity',
           'android:theme': '@android:style/Theme.Translucent.NoTitleBar',
           'android:exported': 'false',
+          // Rotation or a font/theme change must not destroy the activity: that would count as a
+          // denial and then show the consent prompt a second time.
+          'android:configChanges': 'orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|uiMode|density|fontScale|layoutDirection',
         },
       });
     }

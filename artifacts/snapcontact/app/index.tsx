@@ -19,6 +19,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useCapture } from '@/hooks/useCapture';
 import * as Linking from 'expo-linking';
 import { S } from '@/lib/strings';
+import { isProper } from '@/lib/contactSummary';
 import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
 import { Banner, Button, F, PressScale, Skeleton, tap, useInsets } from '@/components/ui';
 import { Onboarding } from '@/components/Onboarding';
@@ -86,7 +87,13 @@ export default function Index() {
       const email = parsed.queryParams?.email as string | undefined;
       const token = parsed.queryParams?.token as string | undefined;
       if (email && token) {
-        const result = await auth.verifyLink(email, token);
+        // verifyLink reports failures through authError; a throw here must not leave the user stuck.
+        let result: Awaited<ReturnType<typeof auth.verifyLink>> = false;
+        try {
+          result = await auth.verifyLink(email, token);
+        } catch {
+          result = false;
+        }
         if (result === 'signed-in') {
           setOnboardingStep('intro');
           cap.completeOnboarding();
@@ -170,6 +177,11 @@ export default function Index() {
           onSetPassword={auth.setPassword}
           pendingPasswordEmail={auth.pendingPasswordEmail}
           onGoogleIdToken={auth.signInWithGoogle}
+          onLoginUsername={auth.loginWithUsername}
+          onRegisterAccount={auth.registerAccount}
+          onRequestAccountCode={auth.requestAccountCode}
+          onVerifyAccountCode={auth.verifyAccountCode}
+          onResendAccountCredentials={auth.resendAccountCredentials}
           onSuccess={() => {
             setPaymentVerifyOpen(false);
             setOnboardingStep('intro');
@@ -192,10 +204,12 @@ export default function Index() {
   const reviewing = cap.phase !== 'idle' || cap.candidates.length > 0 || !!cap.imageUri;
   const saving = cap.phase === 'saving';
   const nativeOcrUnavailable = !!cap.imageUri && !cap.ocrAvailable;
-  const selected = cap.candidates.filter((x) => x.selected);
-  const canSave = selected.length > 0 && selected.every((x) => x.valid) && cap.nativeAvailable && !saving;
+  // Only proper contacts (a name and a valid number) can be saved; the rest are listed as excluded.
+  const proper = cap.candidates.filter(isProper);
+  const selected = proper.filter((x) => x.selected);
+  const canSave = selected.length > 0 && cap.nativeAvailable && !saving;
   const showSummary = !saving && cap.outcomes.length > 0 && dismissed !== cap.outcomes;
-  const allSelected = cap.candidates.length > 0 && cap.candidates.every((x) => x.selected);
+  const allSelected = proper.length > 0 && proper.every((x) => x.selected);
   const listMode = viewMode === 'list';
   // With several numbers, the card screen's main button opens the list step before saving.
   const goToList = !listMode && cap.candidates.length > 1;
@@ -1072,7 +1086,8 @@ export default function Index() {
                 )}
               />
 
-              {/* Collapsible Recognized Text */}
+              {/* Collapsible Recognized Text: developer tool only, never shown in release builds */}
+              {__DEV__ ? (
               <View
                 style={{
                   backgroundColor: '#FFFFFF',
@@ -1138,6 +1153,7 @@ export default function Index() {
                   </View>
                 ) : null}
               </View>
+              ) : null}
             </View>
           )}
         </View>

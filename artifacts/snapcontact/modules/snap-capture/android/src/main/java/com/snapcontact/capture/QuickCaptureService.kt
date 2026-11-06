@@ -103,7 +103,15 @@ class QuickCaptureService : Service() {
       } else {
         // On Android 14+ (or first capture), MediaProjection tokens are single-use
         Log.d(TAG, "Requesting MediaProjection consent for capture")
-        MediaProjectionConsentActivity.launch(this)
+        try {
+          MediaProjectionConsentActivity.launch(this)
+        } catch (e: Exception) {
+          // Without this, the capture lock and hidden overlay would stay on and ignore every later tap.
+          Log.e(TAG, "Could not open the consent screen", e)
+          isCapturing.set(false)
+          overlay.restoreAfterCapture()
+          SnapCaptureModule.notifyError("Could not open the screen capture permission. Please try again.")
+        }
       }
     }
   }

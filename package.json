@@ -5,7 +5,7 @@
   "scripts": {
     "preinstall": "sh -c 'rm -f package-lock.json yarn.lock'",
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
-    "start": "cd artifacts/api-server && node --enable-source-maps ./dist/index.mjs",
+    "start": "cd artifacts/api-server && node --env-file=.env --enable-source-maps ./dist/index.mjs",
     "typecheck:libs": "tsc --build",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck"
   },

@@ -3,7 +3,9 @@ package com.snapcontact.capture
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.media.projection.MediaProjectionConfig
 import android.media.projection.MediaProjectionManager
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
 
@@ -27,6 +29,7 @@ class MediaProjectionConsentActivity : Activity() {
     val projectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as? MediaProjectionManager
     if (projectionManager == null) {
       Log.e(TAG, "MediaProjectionManager not available")
+      handled = true // onDestroy must not report the same denial a second time
       QuickCaptureService.onConsentDenied()
       finish()
       @Suppress("DEPRECATION")
@@ -36,9 +39,17 @@ class MediaProjectionConsentActivity : Activity() {
 
     try {
       Log.d(TAG, "Requesting MediaProjection user consent")
-      startActivityForResult(projectionManager.createScreenCaptureIntent(), REQUEST_MEDIA_PROJECTION)
+      // Android 14+: capture the whole screen by default, so the "choose an app" picker is skipped.
+      // The system still asks the user to approve; the app cannot bypass that.
+      val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+        projectionManager.createScreenCaptureIntent(MediaProjectionConfig.createConfigForDefaultDisplay())
+      } else {
+        projectionManager.createScreenCaptureIntent()
+      }
+      startActivityForResult(intent, REQUEST_MEDIA_PROJECTION)
     } catch (e: Exception) {
       Log.e(TAG, "Failed launching MediaProjection consent dialog", e)
+      handled = true // onDestroy must not report the same denial a second time
       QuickCaptureService.onConsentDenied()
       finish()
       @Suppress("DEPRECATION")

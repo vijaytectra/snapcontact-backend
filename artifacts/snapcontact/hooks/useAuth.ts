@@ -17,6 +17,8 @@ const TOKEN_KEY = 'snapcontact.token.v1';
 const REFRESH_KEY = 'snapcontact.refresh.v1';
 
 const DEMO_EMAIL = 'traveler@example.com';
+// Shown when a second request is tapped while one is still running, instead of doing nothing.
+const BUSY_MESSAGE = 'Still working on the last request. Please wait a moment and try again.';
 
 export function useAuth() {
   const [user, setUser] = useState<UserProfile | null>(null);
@@ -92,7 +94,8 @@ export function useAuth() {
       return null;
     }
     try {
-      const data = await apiFetch('/auth/check-email', { method: 'POST', body: JSON.stringify({ email: cleanEmail }) });
+      // Read-only check, so it is safe to retry after a dropped connection.
+      const data = await apiFetch('/auth/check-email', { method: 'POST', body: JSON.stringify({ email: cleanEmail }), retry: true });
       return data.method === 'password' ? 'password' : 'otp';
     } catch (e: any) {
       // Older server without /auth/check-email: it signs in with an email code only.
@@ -110,7 +113,7 @@ export function useAuth() {
       setAuthError('Please enter a valid email address.');
       return false;
     }
-    if (busyRef.current) return false;
+    if (busyRef.current) { setAuthError(BUSY_MESSAGE); return false; }
     busyRef.current = true;
     try {
       await apiFetch('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email: cleanEmail }) });
@@ -132,7 +135,7 @@ export function useAuth() {
       setAuthError('Please enter a valid email address.');
       return false;
     }
-    if (busyRef.current) return false;
+    if (busyRef.current) { setAuthError(BUSY_MESSAGE); return false; }
     busyRef.current = true;
     try {
       await apiFetch('/auth/request-otp', { method: 'POST', body: JSON.stringify({ email: cleanEmail, mode }) });
@@ -147,7 +150,7 @@ export function useAuth() {
 
   /** Signs in with the ID token from Google's sign-in sheet. Creates the account on first use. */
   const signInWithGoogle = useCallback(async (idToken: string): Promise<boolean> => {
-    if (busyRef.current) return false;
+    if (busyRef.current) { setAuthError(BUSY_MESSAGE); return false; }
     busyRef.current = true;
     setAuthError(null);
     try {
@@ -167,11 +170,12 @@ export function useAuth() {
    * user creates a password; `pendingPasswordEmail` tells the auth screen to show that step.
    */
   const verifyLink = useCallback(async (email: string, token: string): Promise<'signed-in' | 'needs-password' | false> => {
-    if (busyRef.current) return false;
+    if (busyRef.current) { setAuthError(BUSY_MESSAGE); return false; }
     busyRef.current = true;
     setAuthError(null);
     try {
-      const data = await apiFetch(`/auth/verify-link?email=${encodeURIComponent(email)}&token=${encodeURIComponent(token)}`);
+      // The link is single-use: a retry after a lost response would wrongly report it as expired.
+      const data = await apiFetch(`/auth/verify-link?email=${encodeURIComponent(email)}&token=${encodeURIComponent(token)}`, { retry: false });
       if (data.needsPassword === true) {
         pendingSessionRef.current = data;
         setPendingPasswordEmail(data.user?.email ?? email);
@@ -195,7 +199,7 @@ export function useAuth() {
   const verifyOtp = useCallback(async (
     email: string, otp: string, name?: string, purpose: 'signin' | 'reset' = 'signin',
   ): Promise<'signed-in' | 'needs-password' | false> => {
-    if (busyRef.current) return false;
+    if (busyRef.current) { setAuthError(BUSY_MESSAGE); return false; }
     busyRef.current = true;
     setAuthError(null);
     const cleanEmail = email.trim();
@@ -217,7 +221,7 @@ export function useAuth() {
 
   /** Creates (or resets) the password with the session from the code just verified, then signs in. */
   const setPassword = useCallback(async (password: string): Promise<boolean> => {
-    if (busyRef.current) return false;
+    if (busyRef.current) { setAuthError(BUSY_MESSAGE); return false; }
     setAuthError(null);
     const pending = pendingSessionRef.current;
     if (!pending?.token) {
@@ -245,7 +249,7 @@ export function useAuth() {
 
   const login = useCallback(
     async (email: string, password?: string): Promise<boolean> => {
-      if (busyRef.current) return false;
+      if (busyRef.current) { setAuthError(BUSY_MESSAGE); return false; }
       setAuthError(null);
       const cleanEmail = email.trim();
       if (!cleanEmail || !isValidEmail(cleanEmail)) {
@@ -291,9 +295,93 @@ export function useAuth() {
     [applySession]
   );
 
+  /** Username sign-up, step 1: reserves the username and password. Returns the id for the next steps. */
+  const registerAccount = useCallback(async (username: string, password: string): Promise<{ registrationId: string } | null> => {
+    if (busyRef.current) { setAuthError(BUSY_MESSAGE); return null; }
+    busyRef.current = true;
+    setAuthError(null);
+    try {
+      const data = await apiFetch('/auth/register', { method: 'POST', body: JSON.stringify({ username, password }) });
+      return { registrationId: String(data.registrationId) };
+    } catch (e: any) {
+      setAuthError(e?.message || 'Could not create your account. Please try again.');
+      return null;
+    } finally {
+      busyRef.current = false;
+    }
+  }, []);
+
+  /** Username sign-up, step 2: emails a 6-digit code to the address. */
+  const requestAccountCode = useCallback(async (registrationId: string, email: string): Promise<boolean> => {
+    if (busyRef.current) { setAuthError(BUSY_MESSAGE); return false; }
+    busyRef.current = true;
+    setAuthError(null);
+    try {
+      await apiFetch('/auth/register/email', { method: 'POST', body: JSON.stringify({ registrationId, email: email.trim() }) });
+      return true;
+    } catch (e: any) {
+      setAuthError(e?.message || 'Could not send the code. Please try again.');
+      return false;
+    } finally {
+      busyRef.current = false;
+    }
+  }, []);
+
+  /**
+   * Username sign-up, step 3: confirms the code and creates the account. `credentialsSent` is false
+   * when the email with the username and password could not be sent (the account still exists).
+   */
+  const verifyAccountCode = useCallback(async (registrationId: string, otp: string): Promise<{ credentialsSent: boolean } | null> => {
+    if (busyRef.current) { setAuthError(BUSY_MESSAGE); return null; }
+    busyRef.current = true;
+    setAuthError(null);
+    try {
+      const data = await apiFetch('/auth/register/verify', { method: 'POST', body: JSON.stringify({ registrationId, otp }) });
+      return { credentialsSent: data.credentialsSent === true };
+    } catch (e: any) {
+      setAuthError(e?.message || 'That code is not valid. Please try again.');
+      return null;
+    } finally {
+      busyRef.current = false;
+    }
+  }, []);
+
+  /** Sends the username and password email again after it failed. */
+  const resendAccountCredentials = useCallback(async (registrationId: string): Promise<boolean> => {
+    if (busyRef.current) { setAuthError(BUSY_MESSAGE); return false; }
+    busyRef.current = true;
+    setAuthError(null);
+    try {
+      await apiFetch('/auth/register/resend-credentials', { method: 'POST', body: JSON.stringify({ registrationId }) });
+      return true;
+    } catch (e: any) {
+      setAuthError(e?.message || 'Could not send the email. Please try again.');
+      return false;
+    } finally {
+      busyRef.current = false;
+    }
+  }, []);
+
+  /** Signs in with a username and password. Works after logout too; the session is stored as usual. */
+  const loginWithUsername = useCallback(async (username: string, password: string): Promise<boolean> => {
+    if (busyRef.current) { setAuthError(BUSY_MESSAGE); return false; }
+    busyRef.current = true;
+    setAuthError(null);
+    try {
+      const data = await apiFetch('/auth/login', { method: 'POST', body: JSON.stringify({ username: username.trim(), password }) });
+      await applySession(data);
+      return true;
+    } catch (e: any) {
+      setAuthError(e?.message || 'Could not sign in. Please try again.');
+      return false;
+    } finally {
+      busyRef.current = false;
+    }
+  }, [applySession]);
+
   const signup = useCallback(
     async (email: string, _password?: string, name?: string): Promise<boolean> => {
-      if (busyRef.current) return false;
+      if (busyRef.current) { setAuthError(BUSY_MESSAGE); return false; }
       busyRef.current = true;
       setAuthError(null);
       const cleanEmail = email.trim();
@@ -308,38 +396,19 @@ export function useAuth() {
         return false;
       }
 
+      // No offline fallback: an account that exists only on this device cannot pay or sync.
       try {
         const data = await apiFetch('/auth/signup', { method: 'POST', body: JSON.stringify({ email: cleanEmail, password: _password || '', name }) });
-        const profile: UserProfile = {
-          id: data.user.id,
-          email: data.user.email,
-          name: data.user.name,
-          createdAt: new Date().toISOString(),
-          subscription: data.user.subscription || createDefaultTrialSubscription(),
-        };
-        await SecureStore.setItemAsync('snapcontact.token.v1', data.token);
-        if (data.refreshToken) await SecureStore.setItemAsync('snapcontact.refresh.v1', data.refreshToken);
-        await storeUser(profile);
-        setUser(profile);
-        busyRef.current = false;
+        await applySession(data);
         return true;
-      } catch {}
-
-      const now = new Date().toISOString();
-      const profile: UserProfile = {
-        id: `usr_${Date.now()}`,
-        email: cleanEmail,
-        name: name?.trim() || cleanEmail.split('@')[0],
-        createdAt: now,
-        subscription: createDefaultTrialSubscription(),
-      };
-
-      await storeUser(profile);
-      setUser(profile);
-      busyRef.current = false;
-      return true;
+      } catch (e: any) {
+        setAuthError(e?.message || 'Could not create your account. Please try again.');
+        return false;
+      } finally {
+        busyRef.current = false;
+      }
     },
-    []
+    [applySession]
   );
 
   const logout = useCallback(async () => {
@@ -448,6 +517,11 @@ export function useAuth() {
     verifyOtp,
     setPassword,
     requestPasswordReset,
+    registerAccount,
+    requestAccountCode,
+    verifyAccountCode,
+    resendAccountCredentials,
+    loginWithUsername,
     signInWithGoogle,
     verifyLink,
     logout,

@@ -53,32 +53,50 @@ export class ApiError extends Error {
 const RETRY_DELAYS_MS = [1500, 3000];
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-export async function apiFetch(path: string, options: RequestInit = {}) {
+/**
+ * `retry` overrides the default: reads (GET) retry a dropped connection; other methods do not,
+ * because the first attempt may already have reached the server (a second email, order or
+ * spent code). Pass `retry: true` only for calls that are safe to repeat.
+ */
+export async function apiFetch(path: string, options: RequestInit & { retry?: boolean } = {}) {
   if (CONFIG.error) throw new ApiError(CONFIG.error, 0, 'CONFIG');
+  const { retry, ...init } = options;
+  const maxRetries = (retry ?? (init.method ?? 'GET').toUpperCase() === 'GET') ? RETRY_DELAYS_MS.length : 0;
+  const timeoutError = () => new ApiError('The server is taking too long to respond. Please try again in a moment.', 0);
   let res: Response | undefined;
+  let controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
   for (let attempt = 0; ; attempt++) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    controller = new AbortController();
+    timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
     try {
       res = await fetch(`${BASE}${path}`, {
-        ...options,
+        ...init,
         signal: controller.signal,
-        headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+        headers: { 'Content-Type': 'application/json', ...(init.headers || {}) },
       });
       break;
     } catch (e: any) {
-      if (e?.name === 'AbortError') {
-        throw new ApiError('The server is taking too long to respond. Please try again in a moment.', 0);
-      }
-      if (attempt >= RETRY_DELAYS_MS.length) {
+      clearTimeout(timer);
+      if (e?.name === 'AbortError') throw timeoutError();
+      if (attempt >= maxRetries) {
         throw new ApiError('Could not reach the server. Check your internet connection and try again.', 0);
       }
       await wait(RETRY_DELAYS_MS[attempt]);
-    } finally {
-      clearTimeout(timer);
     }
   }
-  const data = await res.json().catch(() => ({}));
+  // The same timer keeps running while the body is read, so a stalled response cannot hang forever.
+  let data: any;
+  try {
+    data = await res.json();
+  } catch {
+    if (controller.signal.aborted) throw timeoutError();
+    // A success status with a non-JSON body (e.g. a captive Wi-Fi login page) is not a valid answer.
+    if (res.ok) throw new ApiError('The server sent an unexpected response. Please try again.', res.status);
+    data = {};
+  } finally {
+    clearTimeout(timer);
+  }
   if (!res.ok) {
     throw new ApiError(data?.error || `Something went wrong (error ${res.status}). Please try again.`, res.status, data?.code);
   }

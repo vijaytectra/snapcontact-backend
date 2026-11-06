@@ -327,19 +327,36 @@ function looksLikePerson(line: string) {
 function usableLine(line: string) {
   return line.length >= 2 && line.length <= 90 && /\p{L}/u.test(line)
     && !/https?:|www\.|@/i.test(line) && !LABEL_ONLY.test(line) && !/\d{4}/.test(line)
-    && !/\.(?:com|org|net|edu|gov|io|ai|app|dev|tech|co|in|pl|de|uk|eu)\b/i.test(line);
+    && !/\.(?:com|org|net|edu|gov|io|ai|app|dev|tech|co|in|pl|de|uk|eu)\b/i.test(line)
+    // Country lists in a screenshot ("Tanzania (+255)", "+91 India") are not names or companies.
+    && !/\+\s?\d|\(\s*\d{1,4}\s*\)/.test(line);
+}
+
+/** Lines of the same card: from `lines` (nearest first), up to the first blank line or `max` lines. */
+function cardLines(lines: string[], max: number): string[] {
+  const block: string[] = [];
+  for (const line of lines) {
+    if (block.length >= max || line.trim() === '') break;
+    block.push(line);
+  }
+  return block;
 }
 
 /**
- * Name, company and job title from the lines around a number. The name is the nearest line that
- * looks like a person; a company is used only when there is no person; a designation never is.
+ * Name, company and job title for the number at [start, end). They are taken only from the same
+ * card: the rest of its line on either side, and the lines above and below up to a blank line.
+ * A blank line ends the card, so a name from a neighbouring card is never attached.
+ * Within the card the nearest person line wins.
  */
-function contactDetailsNear(text: string, offset: number): Field {
-  const before = text.slice(0, offset).split('\n');
+function contactDetailsNear(text: string, start: number, end: number): Field {
+  const before = text.slice(0, start).split('\n');
+  const after = text.slice(end).split('\n');
   const sameLine = cleanLine(before.at(-1) ?? '');
-  const previous = before.slice(0, -1).reverse().slice(0, 4).map(cleanLine);
-  const next = text.slice(offset).split('\n').slice(1, 3).map(cleanLine);
-  const window = [sameLine, ...previous, ...next].filter(usableLine);
+  // Text to the right of the number on its own line ("+91 98765 43210  Akash").
+  const sameLineRight = cleanLine((after[0] ?? '').replace(/^[\s|•·,;:\-–—]+/, ''));
+  const previous = cardLines(before.slice(0, -1).reverse(), 4).map(cleanLine);
+  const next = cardLines(after.slice(1), 2).map(cleanLine);
+  const window = [sameLine, sameLineRight, ...previous, ...next].filter(usableLine);
   const person = window.find(looksLikePerson);
   const company = window.find((l) => COMPANY.test(l) && !DESIGNATION.test(l))
     ?? window.find((l) => !looksLikePerson(l) && !DESIGNATION.test(l) && /\p{L}{3}/u.test(l) && l !== person);
@@ -353,7 +370,13 @@ function contactDetailsNear(text: string, offset: number): Field {
 
 /** Kept for callers that only need the suggested contact name. */
 function nearbyName(text: string, offset: number): string {
-  return contactDetailsNear(text, offset).name;
+  return contactDetailsNear(text, offset, offset).name;
+}
+
+/** True when no blank line separates two positions, i.e. they are in the same card. */
+function sameCard(source: string, a: number, b: number): boolean {
+  const [from, to] = a < b ? [a, b] : [b, a];
+  return !/\n[ \t]*\n/.test(source.slice(from, to));
 }
 
 export function extractCandidates(source: string, country: CountryCode): Candidate[] {
@@ -395,7 +418,7 @@ export function extractCandidates(source: string, country: CountryCode): Candida
     let bestEmailIdx = -1;
     let bestEmailDist = Infinity;
     for (let i = 0; i < emails.length; i++) {
-      if (usedEmails.has(i)) continue;
+      if (usedEmails.has(i) || !sameCard(source, start, emails[i].start)) continue;
       const dist = Math.abs(emails[i].start - start);
       if (dist < bestEmailDist) {
         bestEmailDist = dist;
@@ -412,7 +435,7 @@ export function extractCandidates(source: string, country: CountryCode): Candida
     let bestWebIdx = -1;
     let bestWebDist = Infinity;
     for (let i = 0; i < websites.length; i++) {
-      if (usedWebsites.has(i)) continue;
+      if (usedWebsites.has(i) || !sameCard(source, start, websites[i].start)) continue;
       const dist = Math.abs(websites[i].start - start);
       if (dist < bestWebDist) {
         bestWebDist = dist;
@@ -424,12 +447,14 @@ export function extractCandidates(source: string, country: CountryCode): Candida
       usedWebsites.add(bestWebIdx);
     }
 
+    const details = contactDetailsNear(text, start, start + raw.length);
     return [{
       id: `number-${start}-${results.length}`, raw, number: raw,
-      ...contactDetailsNear(text, start),
+      ...details,
       email: attachedEmail,
       website: attachedWebsite,
-      selected: check.valid,
+      // Only a valid number with a name is saved by default; the rest are listed as excluded.
+      selected: check.valid && details.name.trim() !== '',
       valid: check.valid, formatted: check.formatted,
       message: check.message, extension: check.extension,
       countryLabel: check.countryLabel,
@@ -447,7 +472,7 @@ export function extractCandidates(source: string, country: CountryCode): Candida
     let bestWebIdx = -1;
     let bestWebDist = Infinity;
     for (let w = 0; w < websites.length; w++) {
-      if (usedWebsites.has(w)) continue;
+      if (usedWebsites.has(w) || !sameCard(source, em.start, websites[w].start)) continue;
       const dist = Math.abs(websites[w].start - em.start);
       if (dist < bestWebDist) {
         bestWebDist = dist;
@@ -467,7 +492,8 @@ export function extractCandidates(source: string, country: CountryCode): Candida
       name: nearbyName(text, em.start),
       email: em.email,
       website: attachedWebsite,
-      selected: true,
+      // No phone number: excluded from saving (see contactSummary.ts), so not selected.
+      selected: false,
       valid: true,
       formatted: em.email,
       message: '',
@@ -493,7 +519,8 @@ export function extractCandidates(source: string, country: CountryCode): Candida
       name: nearbyName(text, web.start),
       email: undefined,
       website: web.website,
-      selected: true,
+      // No phone number: excluded from saving (see contactSummary.ts), so not selected.
+      selected: false,
       valid: true,
       formatted: web.website,
       message: '',

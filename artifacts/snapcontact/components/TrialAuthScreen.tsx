@@ -19,12 +19,22 @@ import { warmUpServer } from '@/lib/api';
  *   email -> Next -> has a password? yes -> password -> signed in            (no code)
  *                                    no  -> code -> create password -> signed in (first time)
  *   password -> "Forgot password?" -> code -> new password -> signed in
- * "Create account" asks for a name first and then follows the code path. Screens never say
- * whether an email is registered. "Continue with Google" signs in or creates the account.
+ *
+ * Username sign-in (any time, including after logout):
+ *   username + password -> signed in
+ *
+ * Create account (username):
+ *   username + password -> email -> 6-digit code -> account created, login details emailed -> signed in
+ *   If the login-details email fails, the user can resend it, then continue.
+ *
+ * Screens never say whether an email is registered. "Continue with Google" signs in or creates the account.
  */
-type Step = 'email' | 'password' | 'signup' | 'otp' | 'create-password';
-type Mode = 'signin' | 'signup' | 'reset';
+type Step =
+  | 'email' | 'password' | 'otp' | 'create-password'
+  | 'username-login' | 'account' | 'account-email' | 'account-code' | 'account-credentials';
+type Mode = 'signin' | 'reset';
 const MIN_PASSWORD = 8;
+const USERNAME_PATTERN = /^[a-z0-9_.]{3,30}$/;
 
 export function TrialAuthScreen({
   onSuccess,
@@ -37,6 +47,11 @@ export function TrialAuthScreen({
   onSetPassword,
   pendingPasswordEmail,
   onGoogleIdToken,
+  onLoginUsername,
+  onRegisterAccount,
+  onRequestAccountCode,
+  onVerifyAccountCode,
+  onResendAccountCredentials,
   error,
   isExpired,
 }: {
@@ -52,12 +67,18 @@ export function TrialAuthScreen({
   /** Set after a first sign-in by emailed link: open straight on "Create a password". */
   pendingPasswordEmail?: string | null;
   onGoogleIdToken: (idToken: string) => Promise<boolean>;
+  onLoginUsername: (username: string, password: string) => Promise<boolean>;
+  onRegisterAccount: (username: string, password: string) => Promise<{ registrationId: string } | null>;
+  onRequestAccountCode: (registrationId: string, email: string) => Promise<boolean>;
+  onVerifyAccountCode: (registrationId: string, otp: string) => Promise<{ credentialsSent: boolean } | null>;
+  onResendAccountCredentials: (registrationId: string) => Promise<boolean>;
   error?: string | null;
   isExpired?: boolean;
 }) {
   const i = useInsets();
   const [email, setEmail] = useState('');
-  const [name, setName] = useState('');
+  const [username, setUsername] = useState('');
+  const [registrationId, setRegistrationId] = useState<string | null>(null);
   const [otp, setOtp] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -96,6 +117,7 @@ export function TrialAuthScreen({
 
   const shownError = localError || (showServerError ? error : null);
   const cleanEmail = email.trim();
+  const cleanUsername = username.trim().toLowerCase();
 
   const resetMessages = () => {
     setLocalError(null);
@@ -116,6 +138,12 @@ export function TrialAuthScreen({
     return true;
   };
 
+  /** Forgets the password typed on the account screens once the account is in use. */
+  const forgetAccountSecrets = () => {
+    setPassword('');
+    setConfirm('');
+  };
+
   const sendCode = async (m: Mode) => {
     setLoading(true);
     const ok = m === 'reset' ? await onRequestPasswordReset(cleanEmail) : await onRequestOtp(cleanEmail);
@@ -131,7 +159,7 @@ export function TrialAuthScreen({
     return true;
   };
 
-  // Step 1: Next. Accounts with a password go to the password screen; everyone else gets a code.
+  // Email sign-in, step 1: Next. Accounts with a password go to the password screen; others get a code.
   const handleNext = async () => {
     tap('medium');
     resetMessages();
@@ -170,17 +198,126 @@ export function TrialAuthScreen({
     await sendCode('reset');
   };
 
-  // Create account: name + email, then a code to prove the email is theirs. An existing
-  // account is simply signed in by the code, so this never reveals whether the email is taken.
-  const handleCreate = async () => {
+  // Username sign-in: works with the username and password chosen at sign-up, at any time.
+  const handleUsernameLogin = async () => {
     tap('medium');
     resetMessages();
-    if (!name.trim()) {
-      setLocalError('Enter your name.');
+    if (!cleanUsername) {
+      setLocalError('Enter your username.');
+      return;
+    }
+    if (!password) {
+      setLocalError('Enter your password.');
+      return;
+    }
+    setLoading(true);
+    const ok = await onLoginUsername(cleanUsername, password);
+    setLoading(false);
+    if (ok) {
+      forgetAccountSecrets();
+      onSuccess('');
+    } else setShowServerError(true);
+  };
+
+  // Create account, step 1: username and password. Reserves them; nothing signs in yet.
+  const handleAccountCreate = async () => {
+    tap('medium');
+    resetMessages();
+    if (!USERNAME_PATTERN.test(cleanUsername)) {
+      setLocalError('Use 3 to 30 letters, numbers, dots or underscores.');
+      return;
+    }
+    if (password.length < MIN_PASSWORD) {
+      setLocalError(`Use at least ${MIN_PASSWORD} characters.`);
+      return;
+    }
+    if (password !== confirm) {
+      setLocalError('The passwords don’t match.');
+      return;
+    }
+    setLoading(true);
+    const result = await onRegisterAccount(cleanUsername, password);
+    setLoading(false);
+    if (!result) {
+      setShowServerError(true);
+      return;
+    }
+    setRegistrationId(result.registrationId);
+    setEmail('');
+    goTo('account-email');
+  };
+
+  // Create account, step 2 (and resend): emails the code. Used from the email step and the code step.
+  const handleAccountSendCode = async () => {
+    tap('medium');
+    resetMessages();
+    if (!registrationId) {
+      setShowServerError(true);
       return;
     }
     if (!validEmail()) return;
-    await sendCode('signup');
+    setLoading(true);
+    const ok = await onRequestAccountCode(registrationId, cleanEmail);
+    setLoading(false);
+    if (!ok) {
+      setShowServerError(true);
+      return;
+    }
+    setOtp('');
+    goTo('account-code');
+    setNotice(`We sent a 6-digit code to ${cleanEmail}.`);
+  };
+
+  // Shared by the code step and the credentials step: sign in with the new account.
+  const signInNewAccount = async () => {
+    setLoading(true);
+    const ok = await onLoginUsername(cleanUsername, password);
+    setLoading(false);
+    if (ok) {
+      forgetAccountSecrets();
+      onSuccess(cleanEmail);
+    } else setShowServerError(true);
+  };
+
+  // Create account, step 3: confirms the code. The account exists from here on.
+  const handleAccountVerify = async () => {
+    tap('medium');
+    resetMessages();
+    if (otp.trim().length < 6) {
+      setLocalError('Enter the 6-digit code from your email.');
+      return;
+    }
+    if (!registrationId) {
+      setShowServerError(true);
+      return;
+    }
+    setLoading(true);
+    const result = await onVerifyAccountCode(registrationId, otp.trim());
+    setLoading(false);
+    if (!result) {
+      setShowServerError(true);
+      return;
+    }
+    if (!result.credentialsSent) {
+      goTo('account-credentials');
+      setNotice(`Your account is ready, but we could not email your username and password to ${cleanEmail}.`);
+      return;
+    }
+    await signInNewAccount();
+  };
+
+  const handleResendCredentials = async () => {
+    tap();
+    resetMessages();
+    if (!registrationId) {
+      setShowServerError(true);
+      return;
+    }
+    setLoading(true);
+    const ok = await onResendAccountCredentials(registrationId);
+    setLoading(false);
+    if (ok) setNotice(`Your username and password were sent to ${cleanEmail}.`);
+    else setShowServerError(true);
   };
 
   const handleVerify = async () => {
@@ -191,7 +328,7 @@ export function TrialAuthScreen({
       return;
     }
     setLoading(true);
-    const result = await onVerifyOtp(cleanEmail, otp.trim(), mode === 'signup' ? name.trim() : undefined, mode === 'reset' ? 'reset' : 'signin');
+    const result = await onVerifyOtp(cleanEmail, otp.trim(), undefined, mode === 'reset' ? 'reset' : 'signin');
     setLoading(false);
     if (result === 'signed-in') onSuccess(cleanEmail);
     else if (result === 'needs-password') {
@@ -248,15 +385,20 @@ export function TrialAuthScreen({
   const handleBack = () => {
     tap();
     if (step === 'email') onBack?.();
-    else if (step === 'otp') goTo(mode === 'signup' ? 'signup' : mode === 'reset' ? 'password' : 'email');
-    // The code was used up; going back starts over from the email.
+    else if (step === 'otp') goTo(mode === 'reset' ? 'password' : 'email');
+    else if (step === 'account-email') goTo('account');
+    else if (step === 'account-code') goTo('account-email');
     else goTo('email');
   };
 
   const title =
     step === 'email' ? (isExpired ? 'Session expired' : 'Sign in')
     : step === 'password' ? 'Welcome back'
-    : step === 'signup' ? 'Create your account'
+    : step === 'username-login' ? 'Sign in with username'
+    : step === 'account' ? 'Create account'
+    : step === 'account-email' ? 'Verify your email'
+    : step === 'account-code' ? 'Enter your code'
+    : step === 'account-credentials' ? 'Account created'
     : step === 'create-password' ? (mode === 'reset' ? 'Set a new password' : 'Create a password')
     : mode === 'reset' ? 'Reset your password'
     : 'Verify it’s you';
@@ -264,7 +406,11 @@ export function TrialAuthScreen({
   const subtitle =
     step === 'email' ? 'to continue to SnapContact'
     : step === 'password' ? cleanEmail
-    : step === 'signup' ? 'Start your free 7-day trial'
+    : step === 'username-login' ? 'Use the username and password you chose'
+    : step === 'account' ? 'Choose a username and password. You will confirm your email next.'
+    : step === 'account-email' ? 'We will send a 6-digit code to confirm the email is yours.'
+    : step === 'account-code' ? `Enter the 6-digit code we sent to ${cleanEmail}`
+    : step === 'account-credentials' ? 'You can send your login details again, then continue.'
     : step === 'create-password' ? `You’ll use it to sign in as ${cleanEmail}, without a code.`
     : `Enter the 6-digit code we sent to ${cleanEmail}`;
 
@@ -332,8 +478,146 @@ export function TrialAuthScreen({
                     returnKeyType="next"
                   />
                   <PrimaryButton testID="trial-auth-next" label={loading ? 'Checking…' : 'Next'} onPress={handleNext} disabled={loading} />
-                  <PressScale testID="trial-auth-create" onPress={() => { tap(); goTo('signup'); }} style={{ paddingVertical: 8, alignItems: 'center' }}>
-                    <Text style={{ color: '#8AB4F8', fontSize: 15, fontWeight: '600' }}>Create account</Text>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                    <PressScale testID="trial-auth-create" onPress={() => { tap(); setPassword(''); setConfirm(''); goTo('account'); }} style={{ paddingVertical: 8 }}>
+                      <Text style={{ color: '#8AB4F8', fontSize: 15, fontWeight: '600' }}>Create account</Text>
+                    </PressScale>
+                    <PressScale testID="trial-auth-username-option" onPress={() => { tap(); setPassword(''); goTo('username-login'); }} style={{ paddingVertical: 8 }}>
+                      <Text style={{ color: '#8AB4F8', fontSize: 15, fontWeight: '600' }}>Sign in with username</Text>
+                    </PressScale>
+                  </View>
+                </View>
+              )}
+
+              {step === 'username-login' && (
+                <View style={{ gap: 12 }}>
+                  <TextInput
+                    testID="trial-auth-username"
+                    style={input}
+                    placeholder="Username"
+                    placeholderTextColor="rgba(255,255,255,0.4)"
+                    value={username}
+                    onChangeText={setUsername}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    autoComplete="username"
+                    returnKeyType="next"
+                  />
+                  <PasswordInput
+                    testID="trial-auth-username-password"
+                    placeholder="Password"
+                    value={password}
+                    onChangeText={setPassword}
+                    onSubmitEditing={handleUsernameLogin}
+                    visible={showPassword}
+                    onToggle={() => setShowPassword((v) => !v)}
+                    autoComplete="current-password"
+                  />
+                  <PrimaryButton testID="trial-auth-username-signin" label={loading ? 'Signing in…' : 'Sign in'} onPress={handleUsernameLogin} disabled={loading} />
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                    <PressScale onPress={() => { tap(); setPassword(''); goTo('email'); }} style={{ paddingVertical: 8 }}>
+                      <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 14 }}>Sign in with email</Text>
+                    </PressScale>
+                    <PressScale onPress={() => { tap(); setPassword(''); goTo('account'); }} style={{ paddingVertical: 8 }}>
+                      <Text style={{ color: '#8AB4F8', fontSize: 14, fontWeight: '600' }}>Create account</Text>
+                    </PressScale>
+                  </View>
+                </View>
+              )}
+
+              {step === 'account' && (
+                <View style={{ gap: 12 }}>
+                  <TextInput
+                    testID="trial-auth-account-username"
+                    style={input}
+                    placeholder="Username"
+                    placeholderTextColor="rgba(255,255,255,0.4)"
+                    value={username}
+                    onChangeText={setUsername}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    autoComplete="username"
+                    returnKeyType="next"
+                  />
+                  <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 12, marginTop: -4 }}>
+                    3 to 30 letters, numbers, dots or underscores
+                  </Text>
+                  <PasswordInput
+                    testID="trial-auth-account-password"
+                    placeholder={`Password (at least ${MIN_PASSWORD} characters)`}
+                    value={password}
+                    onChangeText={setPassword}
+                    visible={showPassword}
+                    onToggle={() => setShowPassword((v) => !v)}
+                    autoComplete="new-password"
+                  />
+                  <PasswordInput
+                    testID="trial-auth-account-confirm"
+                    placeholder="Confirm password"
+                    value={confirm}
+                    onChangeText={setConfirm}
+                    onSubmitEditing={handleAccountCreate}
+                    visible={showPassword}
+                    autoComplete="new-password"
+                  />
+                  <PrimaryButton testID="trial-auth-account-continue" label={loading ? 'Checking…' : 'Continue'} onPress={handleAccountCreate} disabled={loading} />
+                  <PressScale onPress={() => { tap(); setPassword(''); setConfirm(''); goTo('email'); }} style={{ paddingVertical: 8, alignItems: 'center' }}>
+                    <Text style={{ color: '#8AB4F8', fontSize: 15, fontWeight: '600' }}>I already have an account</Text>
+                  </PressScale>
+                </View>
+              )}
+
+              {step === 'account-email' && (
+                <View style={{ gap: 12 }}>
+                  <TextInput
+                    testID="trial-auth-account-email"
+                    style={input}
+                    placeholder="Email"
+                    placeholderTextColor="rgba(255,255,255,0.4)"
+                    value={email}
+                    onChangeText={setEmail}
+                    onSubmitEditing={handleAccountSendCode}
+                    autoCapitalize="none"
+                    autoComplete="email"
+                    keyboardType="email-address"
+                    returnKeyType="send"
+                  />
+                  <PrimaryButton testID="trial-auth-account-send-code" label={loading ? 'Sending code…' : 'Send code'} onPress={handleAccountSendCode} disabled={loading} />
+                </View>
+              )}
+
+              {step === 'account-code' && (
+                <View style={{ gap: 12 }}>
+                  <TextInput
+                    testID="trial-auth-account-otp"
+                    style={[input, { fontSize: 20, letterSpacing: 8, textAlign: 'center' }]}
+                    placeholder="000000"
+                    placeholderTextColor="rgba(255,255,255,0.4)"
+                    value={otp}
+                    onChangeText={(t) => setOtp(t.replace(/\D/g, ''))}
+                    onSubmitEditing={handleAccountVerify}
+                    keyboardType="number-pad"
+                    autoComplete="one-time-code"
+                    textContentType="oneTimeCode"
+                    maxLength={6}
+                  />
+                  <PrimaryButton testID="trial-auth-account-verify" label={loading ? 'Creating account…' : 'Verify & create account'} onPress={handleAccountVerify} disabled={loading} />
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                    <PressScale onPress={() => { tap(); setOtp(''); goTo('account-email'); }} style={{ paddingVertical: 8 }}>
+                      <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 14 }}>Change email</Text>
+                    </PressScale>
+                    <PressScale testID="trial-auth-account-resend" onPress={handleAccountSendCode} disabled={loading} style={{ paddingVertical: 8 }}>
+                      <Text style={{ color: '#8AB4F8', fontSize: 14, fontWeight: '600' }}>Resend code</Text>
+                    </PressScale>
+                  </View>
+                </View>
+              )}
+
+              {step === 'account-credentials' && (
+                <View style={{ gap: 12 }}>
+                  <PrimaryButton testID="trial-auth-account-resend-credentials" label={loading ? 'Sending…' : 'Resend login details'} onPress={handleResendCredentials} disabled={loading} />
+                  <PressScale testID="trial-auth-account-continue-signin" onPress={signInNewAccount} disabled={loading} style={{ paddingVertical: 12, alignItems: 'center' }}>
+                    <Text style={{ color: '#8AB4F8', fontSize: 15, fontWeight: '600' }}>{loading ? 'Signing in…' : 'Continue to SnapContact'}</Text>
                   </PressScale>
                 </View>
               )}
@@ -386,38 +670,6 @@ export function TrialAuthScreen({
                 </View>
               )}
 
-              {step === 'signup' && (
-                <View style={{ gap: 12 }}>
-                  <TextInput
-                    testID="trial-auth-name"
-                    style={input}
-                    placeholder="Full name"
-                    placeholderTextColor="rgba(255,255,255,0.4)"
-                    value={name}
-                    onChangeText={setName}
-                    autoComplete="name"
-                    autoCapitalize="words"
-                    returnKeyType="next"
-                  />
-                  <TextInput
-                    testID="trial-auth-signup-email"
-                    style={input}
-                    placeholder="Email"
-                    placeholderTextColor="rgba(255,255,255,0.4)"
-                    value={email}
-                    onChangeText={setEmail}
-                    onSubmitEditing={handleCreate}
-                    autoCapitalize="none"
-                    autoComplete="email"
-                    keyboardType="email-address"
-                  />
-                  <PrimaryButton testID="trial-auth-signup-submit" label={loading ? 'Sending code…' : 'Create account'} onPress={handleCreate} disabled={loading} />
-                  <PressScale onPress={() => { tap(); goTo('email'); }} style={{ paddingVertical: 8, alignItems: 'center' }}>
-                    <Text style={{ color: '#8AB4F8', fontSize: 15, fontWeight: '600' }}>Sign in instead</Text>
-                  </PressScale>
-                </View>
-              )}
-
               {step === 'otp' && (
                 <View style={{ gap: 12 }}>
                   <TextInput
@@ -433,9 +685,9 @@ export function TrialAuthScreen({
                     textContentType="oneTimeCode"
                     maxLength={6}
                   />
-                  <PrimaryButton testID="trial-auth-verify" label={loading ? 'Verifying…' : mode === 'signup' ? 'Verify & create account' : mode === 'reset' ? 'Verify code' : 'Verify & sign in'} onPress={handleVerify} disabled={loading} />
+                  <PrimaryButton testID="trial-auth-verify" label={loading ? 'Verifying…' : mode === 'reset' ? 'Verify code' : 'Verify & sign in'} onPress={handleVerify} disabled={loading} />
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                    <PressScale onPress={() => { tap(); setOtp(''); goTo(mode === 'signup' ? 'signup' : 'email'); }} style={{ paddingVertical: 8 }}>
+                    <PressScale onPress={() => { tap(); setOtp(''); goTo('email'); }} style={{ paddingVertical: 8 }}>
                       <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 14 }}>Change email</Text>
                     </PressScale>
                     <PressScale testID="trial-auth-resend" onPress={handleResend} disabled={loading} style={{ paddingVertical: 8 }}>

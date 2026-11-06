@@ -1,14 +1,18 @@
 import nodemailer from 'nodemailer';
 
-// Fail fast instead of nodemailer's 2-minute default when SMTP is unreachable
-// (Render's free plan blocks outbound ports 25, 465 and 587).
+// Pooled transporter with direct SSL for fast delivery and connection reuse.
+const port = Number(process.env.SMTP_PORT || 465);
+const secure = process.env.SMTP_SECURE === 'true' || port === 465;
+
 const transporter = nodemailer.createTransport({
+  pool: true,
+  maxConnections: 3,
   host: process.env.SMTP_HOST || 'smtp.gmail.com',
-  port: Number(process.env.SMTP_PORT || 587),
-  secure: false,
-  connectionTimeout: 10000,
-  greetingTimeout: 10000,
-  socketTimeout: 15000,
+  port,
+  secure,
+  connectionTimeout: 8000,
+  greetingTimeout: 8000,
+  socketTimeout: 12000,
   auth: {
     user: process.env.SMTP_USER,
     pass: (process.env.SMTP_PASS || '').replace(/\s+/g, ''),
