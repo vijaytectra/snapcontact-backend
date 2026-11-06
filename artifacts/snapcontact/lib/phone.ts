@@ -24,6 +24,8 @@ export type Candidate = {
   callingCode?: string;
   countryName?: string;
   international?: boolean;
+  /** Countries suggested by the rest of the image (other numbers, email/web domains). */
+  countryHints?: CountryCode[];
 };
 export type CountryOption = { code: CountryCode; name: string; callingCode: string };
 
@@ -91,9 +93,57 @@ export function validateNumber(raw: string, country: CountryCode) {
   };
 }
 
-/** Copy unvalidated input as text without inventing or normalizing its digits. */
-export function prepareNumberCopy(raw: string, country: CountryCode) {
+/**
+ * Countries the rest of the text points to: explicit international numbers (+91 …) first,
+ * then country domains (.in, .co.uk). Used to read local numbers such as "044 2345 6789"
+ * printed next to "+91 98765 43210" without the user changing the default country.
+ */
+export function contextCountries(source: string): CountryCode[] {
+  const text = normalizeDigits(source);
+  const known = new Set<string>(getCountries());
+  const counts = new Map<CountryCode, number>();
+  const add = (code: CountryCode | undefined, weight: number) => {
+    if (code && known.has(code)) counts.set(code, (counts.get(code) ?? 0) + weight);
+  };
+  // A region-less default makes only explicitly international numbers parse.
+  for (const match of findPhoneNumbersInText(text, { extended: true })) {
+    if (match.number.country) add(match.number.country, 10);
+  }
+  for (const match of text.matchAll(/(?:^|[^\d+])(\+|00)\s?(\d[\d ().-]{6,}\d)/g)) {
+    const phone = parsePhoneNumberFromString(`+${match[2]}`);
+    if (phone?.country && !counts.has(phone.country)) add(phone.country, 10);
+  }
+  const domains = [...extractEmails(source).map(e => e.email.split('@')[1]),
+    ...extractWebsites(source).map(w => w.website.replace(/^https?:\/\//i, '').split(/[/:]/)[0])];
+  for (const domain of domains) {
+    const tld = domain?.toLowerCase().split('.').at(-1);
+    if (!tld || tld.length !== 2) continue;
+    add((tld === 'uk' ? 'GB' : tld.toUpperCase()) as CountryCode, 1);
+  }
+  return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([code]) => code);
+}
+
+/**
+ * Validate with the default country; if a local number is not valid there, read it as
+ * the country the rest of the image points to. International numbers are never reinterpreted.
+ */
+export function validateInContext(raw: string, country: CountryCode, hints: CountryCode[] = []) {
   const check = validateNumber(raw, country);
+  if (check.valid || check.international) return { ...check, parseCountry: country };
+  for (const hint of hints) {
+    if (hint === country) continue;
+    const alt = validateNumber(raw, hint);
+    if (!alt.valid || alt.international) continue;
+    const name = alt.countryName || hint;
+    return { ...alt, parseCountry: hint,
+      countryLabel: R.contextCallingCode(name, alt.callingCode ?? getCountryCallingCode(hint)) };
+  }
+  return { ...check, parseCountry: country };
+}
+
+/** Copy unvalidated input as text without inventing or normalizing its digits. */
+export function prepareNumberCopy(raw: string, country: CountryCode, hints: CountryCode[] = []) {
+  const check = validateInContext(raw, country, hints);
   return {
     text: check.valid
       ? check.e164 + (check.extension ? ` ext. ${check.extension}` : '')
@@ -259,6 +309,7 @@ export function extractCandidates(source: string, country: CountryCode): Candida
   const emails = extractEmails(source);
   const emailSpans = emails.map(e => ({ start: e.start, end: e.end }));
   const websites = extractWebsites(source, emailSpans);
+  const hints = contextCountries(source);
 
   const results: Array<{ raw: string; start: number }> = [];
   // POSSIBLE retains uncertain candidates for explicit review rather than hiding them.
@@ -282,7 +333,7 @@ export function extractCandidates(source: string, country: CountryCode): Candida
   const usedWebsites = new Set<number>();
 
   const candidates: Candidate[] = results.sort((a, b) => a.start - b.start).flatMap(({ raw, start }) => {
-    const check = validateNumber(raw, country);
+    const check = validateInContext(raw, country, hints);
     const key = `${check.e164 || raw.replace(/\D/g, '')}:${check.extension ?? ''}`;
     if (seen.has(key)) return [];
     seen.add(key);
@@ -332,6 +383,7 @@ export function extractCandidates(source: string, country: CountryCode): Candida
       countryLabel: check.countryLabel,
       country: check.country, callingCode: check.callingCode,
       countryName: check.countryName, international: check.international,
+      countryHints: hints,
     }];
   });
 

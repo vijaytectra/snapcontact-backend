@@ -8,6 +8,10 @@ export const ocrAvailable = true;
 export const quickCaptureAvailable = false;
 export const recognize = recognizeBrowserImage;
 
+export function simCountry(): string | null {
+  return null;
+}
+
 export async function pendingImage(): Promise<string | null> {
   return null;
 }

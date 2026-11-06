@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.Build
 import android.provider.ContactsContract
 import android.provider.Settings
+import android.telephony.TelephonyManager
 import android.util.Log
 import androidx.core.content.ContextCompat
 import expo.modules.kotlin.Promise
@@ -59,6 +60,19 @@ class SnapCaptureModule : Module() {
     OnDestroy {
       if (instance === this@SnapCaptureModule) {
         instance = null
+      }
+    }
+
+    // ISO country of the SIM (or the network it is on). Phone numbers follow the SIM, not the
+    // UI language: many phones in India run en-US, which would otherwise default to +1.
+    Function("simCountry") {
+      try {
+        val tm = context.getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager
+        listOf(tm?.simCountryIso, tm?.networkCountryIso)
+          .firstOrNull { !it.isNullOrBlank() && it.length == 2 }
+          ?.uppercase()
+      } catch (e: Exception) {
+        null
       }
     }
 

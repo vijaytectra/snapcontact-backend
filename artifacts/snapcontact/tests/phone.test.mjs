@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { extractCandidates, validateNumber, normalizeDigits, countryOptions, prepareNumberCopy, extractEmails, extractWebsites } from '../lib/phone.ts';
+import { extractCandidates, validateNumber, normalizeDigits, countryOptions, prepareNumberCopy, extractEmails, extractWebsites, contextCountries } from '../lib/phone.ts';
 
 
 test('multiple international numbers remain independent and get a nearby editable business suggestion', () => {
@@ -192,3 +192,29 @@ test('standalone email and website without phone numbers creates a contact candi
   assert.equal(candidates[0].selected, true);
 });
 
+
+test('local numbers take the country of the other numbers on the card', () => {
+  const card = 'Ravi Kumar\nSales Manager\nMobile: +91 98765 43210\nOffice: 044 2345 6789\nravi@example.com';
+  const rows = extractCandidates(card, 'US');
+  const office = rows.find(r => r.raw.includes('044'));
+  assert.equal(office.valid, true);
+  assert.equal(office.formatted, '+91 44 2345 6789');
+  assert.match(office.countryLabel, /Detected from this image: .*\(\+91\)/);
+  // Copy and actions use the same detected country.
+  assert.equal(prepareNumberCopy(office.number, 'US', office.countryHints).text, '+914423456789');
+});
+
+test('country domains hint the country when no international number is printed', () => {
+  const rows = extractCandidates('Asha Clinic\n044 2345 6789\nwww.ashaclinic.in', 'US');
+  assert.equal(rows[0].formatted, '+91 44 2345 6789');
+  assert.deepEqual(contextCountries('call 020 7946 0958 or mail hi@shop.co.uk'), ['GB']);
+});
+
+test('context never overrides a number valid in the default country or an international one', () => {
+  const rows = extractCandidates('+91 98765 43210\n(415) 555-2671\n+44 20 7946 0958', 'US');
+  const us = rows.find(r => r.raw.includes('415'));
+  assert.equal(us.callingCode, '1');
+  assert.equal(rows.find(r => r.raw.includes('+44')).callingCode, '44');
+  // With no hints, an invalid local number stays flagged for the user to fix.
+  assert.equal(extractCandidates('044 2345 6789', 'US')[0].valid, false);
+});

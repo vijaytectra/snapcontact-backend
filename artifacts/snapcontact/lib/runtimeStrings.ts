@@ -8,6 +8,7 @@ export const R = {
   countryUndetermined: 'Country or region not determined',
   detectedCallingCode: (region: string, code: string) => `Detected from number: ${region} (+${code})`,
   defaultCallingCode: (region: string, code: string) => `Using default country: ${region} (+${code})`,
+  contextCallingCode: (region: string, code: string) => `Detected from this image: ${region} (+${code})`,
   ocrNativeOnly: 'On-device image reading needs the installed native SnapContact build. In this preview, paste or type the text from your image to review numbers. No image is uploaded.',
   browserOcrFailed: 'Browser image reading could not start. Check your connection for the first OCR engine download, then retry. Your image stays on this device. You can also paste or type the text.',
   browserOcrTimeout: 'Image reading took too long. Try a smaller, sharper image and check your connection for the first engine download. Your image was not uploaded.',

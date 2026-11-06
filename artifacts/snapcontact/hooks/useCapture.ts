@@ -5,7 +5,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as Clipboard from 'expo-clipboard';
 import { getLocales } from 'expo-localization';
 import { getCountries, type CountryCode } from 'libphonenumber-js/max';
-import { countryOptions, extractCandidates, prepareNumberCopy, validateNumber, type Candidate, type CountryOption } from '@/lib/phone';
+import { countryOptions, extractCandidates, prepareNumberCopy, validateInContext, type Candidate, type CountryOption } from '@/lib/phone';
 import * as device from '@/lib/device';
 import { runContactQueue } from '@/lib/contactQueue';
 import { addToOfflineQueue, getOfflineQueue, clearOfflineQueue, removeFromOfflineQueue } from '@/lib/offlineQueue';
@@ -16,8 +16,11 @@ type Phase = 'idle' | 'processing' | 'review' | 'saving';
 type Outcome = { id: string; name: string; status: 'saved' | 'cancelled' | 'error'; message?: string };
 const preferencesKey = 'snapcontact.preferences.v1';
 const locale = getLocales()[0];
-const inferredCountry = getCountries().includes(locale?.regionCode as CountryCode)
-  ? locale.regionCode as CountryCode : 'US';
+const isCountry = (code: unknown): code is CountryCode => getCountries().includes(code as CountryCode);
+// Numbers follow the SIM's country first, then the phone's region setting.
+const simRegion = device.simCountry();
+const inferredCountry: CountryCode = isCountry(simRegion) ? simRegion
+  : isCountry(locale?.regionCode) ? locale.regionCode as CountryCode : 'US';
 
 export function useCapture() {
   const [ready, setReady] = useState(false);
@@ -35,10 +38,12 @@ export function useCapture() {
   const generation = useRef(0);
   const busy = useRef(false);
   const countryRef = useRef(country);
+  // Only a country the user picked overrides automatic detection on later launches.
+  const countryChosen = useRef(false);
   const imageRef = useRef<string | null>(null);
   const countries = useMemo(() => countryOptions(locale?.languageTag ?? 'en'), []);
   const persist = useCallback(async (nextCountry: CountryCode, nextOnboarded: boolean) => {
-    try { await AsyncStorage.setItem(preferencesKey, JSON.stringify({ country: nextCountry, onboarded: nextOnboarded })); }
+    try { await AsyncStorage.setItem(preferencesKey, JSON.stringify({ country: nextCountry, onboarded: nextOnboarded, countryChosen: countryChosen.current })); }
     catch { setError(R.preferenceWrite); }
   }, []);
 
@@ -96,7 +101,10 @@ export function useCapture() {
     AsyncStorage.getItem(preferencesKey).then(value => {
       if (!live || !value) return;
       const saved = JSON.parse(value);
-      if (getCountries().includes(saved.country)) { setCountryState(saved.country); countryRef.current = saved.country; }
+      if (saved.countryChosen === true && isCountry(saved.country)) {
+        countryChosen.current = true;
+        setCountryState(saved.country); countryRef.current = saved.country;
+      }
       // Always show Get Started screen on startup/refresh
       setOnboarded(false);
     }).catch(() => { if (live) setError(R.preferenceRead); })
@@ -196,10 +204,10 @@ export function useCapture() {
 
   const setCountry = (code: CountryCode) => {
     if (busy.current || !getCountries().includes(code)) return;
-    countryRef.current = code; setCountryState(code);
+    countryRef.current = code; setCountryState(code); countryChosen.current = true;
     // Preserve user edits and selections. An invalidated row cannot remain selected.
     setCandidates(rows => rows.map(row => {
-      const check = validateNumber(row.number, code);
+      const check = validateInContext(row.number, code, row.countryHints);
       return { ...row, valid: check.valid, formatted: check.formatted, message: check.message,
         extension: check.extension, countryLabel: check.countryLabel, country: check.country,
         callingCode: check.callingCode, countryName: check.countryName, international: check.international,
@@ -249,7 +257,7 @@ export function useCapture() {
       if (row.id !== id) return row;
       const merged = { ...row, ...patch };
       const check = merged.number
-        ? validateNumber(merged.number, countryRef.current)
+        ? validateInContext(merged.number, countryRef.current, merged.countryHints)
         : { valid: Boolean(merged.email || merged.website), formatted: merged.email || merged.website || '', message: '', extension: undefined, countryLabel: '', country: undefined, callingCode: undefined, countryName: '', international: false };
       return { ...merged, valid: check.valid, formatted: check.formatted, message: check.message,
         extension: check.extension, countryLabel: check.countryLabel, country: check.country,
@@ -266,7 +274,7 @@ export function useCapture() {
     if (!chosen.length) { setError(R.selectNumber); return; }
     busy.current = true; setPhase('saving'); setError(null); setOutcomes([]); setNotice(null);
     const requests = chosen.flatMap(row => {
-      const checked = validateNumber(row.number, countryRef.current);
+      const checked = validateInContext(row.number, countryRef.current, row.countryHints);
       return checked.valid ? [{
         id: row.id, name: row.name.trim(),
         number: checked.e164 + (checked.extension ? `;ext=${checked.extension}` : ''),
@@ -350,16 +358,16 @@ export function useCapture() {
       }
       return;
     }
-    const checked = row.number ? validateNumber(row.number, countryRef.current) : { valid: false, e164: '', extension: undefined };
+    const checked = row.number ? validateInContext(row.number, countryRef.current, row.countryHints) : { valid: false, e164: '', extension: undefined };
     if (kind !== 'copy' && !checked.valid) { setError(R.correctNumber); return; }
     try {
       if (kind === 'copy') {
         const copyText = row.number
-          ? prepareNumberCopy(row.number, countryRef.current).text
+          ? prepareNumberCopy(row.number, countryRef.current, row.countryHints).text
           : (row.email || row.website || '');
         if (!copyText) { setError(R.correctNumber); return; }
         await Clipboard.setStringAsync(copyText);
-        setNotice(row.number ? (prepareNumberCopy(row.number, countryRef.current).valid ? R.copied : R.copiedUnvalidated) : R.copied);
+        setNotice(row.number ? (prepareNumberCopy(row.number, countryRef.current, row.countryHints).valid ? R.copied : R.copiedUnvalidated) : R.copied);
       } else {
         const url = kind === 'call'
           ? `tel:${checked.e164}${checked.extension ? `,${checked.extension}` : ''}`

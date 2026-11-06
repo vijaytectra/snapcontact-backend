@@ -9,6 +9,7 @@ type NativeCapture = {
   pendingImage(): Promise<string | null>;
   createContact(name: string, number: string): Promise<SaveResult>;
   clearImages(): Promise<void>;
+  simCountry?(): string | null;
 
   hasOverlayPermission?(): boolean;
   requestOverlayPermission?(): Promise<boolean>;
@@ -34,6 +35,11 @@ export const quickCaptureAvailable = Platform.OS === 'android' && !!native?.hasO
 export async function recognize(uri: string, _progress?: (value: number) => void) {
   if (!native) throw new Error(R.ocrNativeOnly);
   return native.recognize(uri);
+}
+
+/** ISO country of the SIM/network (Android), or null when unknown. */
+export function simCountry(): string | null {
+  try { return native?.simCountry?.() ?? null; } catch { return null; }
 }
 
 export async function pendingImage() {
