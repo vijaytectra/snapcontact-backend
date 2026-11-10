@@ -446,7 +446,7 @@ export function useAuth() {
    * Calls the API as the signed-in user. An expired access token is refreshed once; if the
    * session is revoked, the user is signed out (SESSION_EXPIRED) instead of keeping stale access.
    */
-  const authedFetch = useCallback(async (path: string, options: RequestInit = {}) => {
+  const authedFetch = useCallback(async (path: string, options: RequestInit & { retry?: boolean; timeoutMs?: number } = {}) => {
     const call = async () => {
       const token = tokensRef.current.token ?? await SecureStore.getItemAsync(TOKEN_KEY).catch(() => null);
       // No stored token (e.g. web, where SecureStore is unavailable): not proof the session is

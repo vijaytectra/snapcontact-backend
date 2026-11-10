@@ -312,7 +312,8 @@ const COMPANY = /\b(?:pvt|private|ltd|limited|llp|llc|inc|corp|corporation|compa
 type Field = { name: string; company?: string; designation?: string };
 
 function cleanLine(line: string) {
-  return line.replace(FIELD_LABEL, '').replace(/[|•·,;:]+$/, '').trim();
+  // Trailing separators such as "Arun -" (name, then dash, then number) are not part of the name.
+  return line.replace(FIELD_LABEL, '').replace(/[\s|•·,;:\-–—]+$/, '').trim();
 }
 
 /** A plausible person's name: 1–4 words of letters (initials allowed), no digits, title or upper case. */
@@ -348,7 +349,13 @@ function cardLines(lines: string[], max: number): string[] {
  * A blank line ends the card, so a name from a neighbouring card is never attached.
  * Within the card the nearest person line wins.
  */
-function contactDetailsNear(text: string, start: number, end: number): Field {
+function contactDetailsNear(
+  text: string,
+  start: number,
+  end: number,
+  spanStart = start,
+  spanEnd = end,
+): Field {
   const before = text.slice(0, start).split('\n');
   const after = text.slice(end).split('\n');
   const sameLine = cleanLine(before.at(-1) ?? '');
@@ -357,7 +364,29 @@ function contactDetailsNear(text: string, start: number, end: number): Field {
   const previous = cardLines(before.slice(0, -1).reverse(), 4).map(cleanLine);
   const next = cardLines(after.slice(1), 2).map(cleanLine);
   const window = [sameLine, sameLineRight, ...previous, ...next].filter(usableLine);
-  const person = window.find(looksLikePerson);
+  let person = window.find(looksLikePerson);
+  if (!person) {
+    // No name in the card. A blank line inside one card is common, so look further, but only in the
+    // text between this number and its neighbouring numbers: a name is never taken from another number's line.
+    // Each side only takes lines nearer to this number than to its neighbour. A name midway between
+    // two numbers belongs to neither, so it is left unassigned rather than guessed.
+    const linesIn = (from: number, to: number) => {
+      const out: Array<{ text: string; start: number; end: number }> = [];
+      let pos = from;
+      for (const line of text.slice(from, to).split('\n')) {
+        out.push({ text: line, start: pos, end: pos + line.length });
+        pos += line.length + 1;
+      }
+      return out;
+    };
+    const beforeLines = linesIn(spanStart, start)
+      .slice(spanStart > 0 ? 1 : 0, -1) // drop the previous number's line tail and this number's own line
+      .filter((l) => spanStart === 0 || l.start >= (spanStart + start) / 2);
+    const afterLines = linesIn(end, spanEnd)
+      .slice(1, spanEnd < text.length ? -1 : undefined) // drop this number's line tail and the next number's line start
+      .filter((l) => spanEnd === text.length || l.end <= (end + spanEnd) / 2);
+    person = [...beforeLines.reverse(), ...afterLines].map((l) => cleanLine(l.text)).filter(usableLine).find(looksLikePerson);
+  }
   const company = window.find((l) => COMPANY.test(l) && !DESIGNATION.test(l))
     ?? window.find((l) => !looksLikePerson(l) && !DESIGNATION.test(l) && /\p{L}{3}/u.test(l) && l !== person);
   const designation = window.find((l) => DESIGNATION.test(l) && !COMPANY.test(l));
@@ -407,7 +436,7 @@ export function extractCandidates(source: string, country: CountryCode): Candida
   const usedEmails = new Set<number>();
   const usedWebsites = new Set<number>();
 
-  const candidates: Candidate[] = results.sort((a, b) => a.start - b.start).flatMap(({ raw, start }) => {
+  const candidates: Candidate[] = results.sort((a, b) => a.start - b.start).flatMap(({ raw, start }, index, all) => {
     const check = validateInContext(raw, country, hints);
     const key = `${check.e164 || raw.replace(/\D/g, '')}:${check.extension ?? ''}`;
     if (seen.has(key)) return [];
@@ -447,7 +476,13 @@ export function extractCandidates(source: string, country: CountryCode): Candida
       usedWebsites.add(bestWebIdx);
     }
 
-    const details = contactDetailsNear(text, start, start + raw.length);
+    const prev = all[index - 1];
+    const next = all[index + 1];
+    const details = contactDetailsNear(
+      text, start, start + raw.length,
+      prev ? prev.start + prev.raw.length : 0,
+      next ? next.start : text.length,
+    );
     return [{
       id: `number-${start}-${results.length}`, raw, number: raw,
       ...details,

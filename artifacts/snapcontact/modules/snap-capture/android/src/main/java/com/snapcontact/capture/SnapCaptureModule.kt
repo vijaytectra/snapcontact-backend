@@ -40,6 +40,9 @@ class SnapCaptureModule : Module() {
   }
 
   private val moduleScope = CoroutineScope(Dispatchers.IO)
+  // The promise of the contact editor that is open now (null when none is).
+  private var pendingEditor: Promise? = null
+  private val EDITOR_REQUEST_CODE = 4217
   private val context: Context
     get() = appContext.reactContext ?: throw IllegalStateException("React application context is null")
 
@@ -211,10 +214,18 @@ class SnapCaptureModule : Module() {
       }
     }
 
+    // The editor is opened for a result, and the promise settles only when it closes. The status
+    // comes from the editor's result code, not from the moment it opened, so a dismissed editor is
+    // never reported as saved and the next contact is not opened on top of it.
     AsyncFunction("createContact") { name: String, number: String, promise: Promise ->
       val currentActivity = appContext.currentActivity
       if (currentActivity == null) {
         promise.reject("NO_ACTIVITY", "Current activity is null", null)
+        return@AsyncFunction
+      }
+      if (pendingEditor != null) {
+        // One editor at a time: a second request while one is open is not saved.
+        promise.resolve(mapOf("status" to "cancelled"))
         return@AsyncFunction
       }
 
@@ -224,12 +235,21 @@ class SnapCaptureModule : Module() {
           putExtra(ContactsContract.Intents.Insert.NAME, name)
           putExtra(ContactsContract.Intents.Insert.PHONE, number)
         }
-        currentActivity.startActivity(intent)
-        // Android contact editor opens. Status is reported as saved upon launching editor
-        promise.resolve(mapOf("status" to "saved"))
+        pendingEditor = promise
+        currentActivity.startActivityForResult(intent, EDITOR_REQUEST_CODE)
       } catch (e: Exception) {
         Log.e(TAG, "Failed launching contact editor", e)
+        pendingEditor = null
         promise.resolve(mapOf("status" to "cancelled"))
+      }
+    }
+
+    OnActivityResult { _, payload ->
+      if (payload.requestCode == EDITOR_REQUEST_CODE) {
+        val waiting = pendingEditor
+        pendingEditor = null
+        val saved = payload.resultCode == Activity.RESULT_OK
+        waiting?.resolve(mapOf("status" to if (saved) "saved" else "cancelled"))
       }
     }
 

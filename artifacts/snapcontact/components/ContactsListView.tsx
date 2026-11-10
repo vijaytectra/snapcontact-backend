@@ -39,6 +39,7 @@ export function ContactsListView({
   allSelected,
   onSelectCandidate,
   onDeleteSelected,
+  onRemove,
 }: {
   candidates: Cand[];
   onToggle: (id: string, selected: boolean) => void;
@@ -46,6 +47,8 @@ export function ContactsListView({
   allSelected: boolean;
   onSelectCandidate: (index: number) => void;
   onDeleteSelected?: () => void;
+  /** Removes one entry from the list (proper or excluded). */
+  onRemove?: (id: string) => void;
 }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [showExcluded, setShowExcluded] = useState(false);
@@ -123,6 +126,20 @@ export function ContactsListView({
         >
           <Ionicons name="pencil" size={18} color="#111111" />
         </PressScale>
+        {onRemove ? (
+          <PressScale
+            testID={`delete-card-${cand.id}`}
+            accessibilityRole="button"
+            accessibilityLabel={`Delete contact ${cand.name || cand.number}`}
+            onPress={() => {
+              tap();
+              onRemove(cand.id);
+            }}
+            style={{ width: 36, height: 36, alignItems: 'center', justifyContent: 'center' }}
+          >
+            <Ionicons name="trash-outline" size={18} color="#B91C1C" />
+          </PressScale>
+        ) : null}
       </View>
     );
   };

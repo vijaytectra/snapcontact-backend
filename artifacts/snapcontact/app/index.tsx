@@ -687,7 +687,9 @@ export default function Index() {
                 backgroundColor: '#FFFFFF',
                 borderTopLeftRadius: 28,
                 borderTopRightRadius: 28,
-                padding: 24,
+                paddingTop: 24,
+                paddingHorizontal: 24,
+                paddingBottom: Math.max(i.bottom, 16) + 24,
                 maxHeight: '70%',
                 gap: 16,
               }}
@@ -935,8 +937,9 @@ export default function Index() {
                 setCurrentCardIndex(index);
                 setViewMode('card');
               }}
+              onRemove={(id) => cap.removeCandidates([id])}
               onDeleteSelected={() => {
-                cap.candidates.filter(c => c.selected).forEach(c => cap.updateCandidate(c.id, { selected: false }));
+                cap.removeCandidates(cap.candidates.filter(c => c.selected).map(c => c.id));
               }}
             />
           ) : (

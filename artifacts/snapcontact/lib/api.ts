@@ -58,9 +58,9 @@ const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  * because the first attempt may already have reached the server (a second email, order or
  * spent code). Pass `retry: true` only for calls that are safe to repeat.
  */
-export async function apiFetch(path: string, options: RequestInit & { retry?: boolean } = {}) {
+export async function apiFetch(path: string, options: RequestInit & { retry?: boolean; timeoutMs?: number } = {}) {
   if (CONFIG.error) throw new ApiError(CONFIG.error, 0, 'CONFIG');
-  const { retry, ...init } = options;
+  const { retry, timeoutMs = TIMEOUT_MS, ...init } = options;
   const maxRetries = (retry ?? (init.method ?? 'GET').toUpperCase() === 'GET') ? RETRY_DELAYS_MS.length : 0;
   const timeoutError = () => new ApiError('The server is taking too long to respond. Please try again in a moment.', 0);
   let res: Response | undefined;
@@ -68,7 +68,7 @@ export async function apiFetch(path: string, options: RequestInit & { retry?: bo
   let timer: ReturnType<typeof setTimeout> | undefined;
   for (let attempt = 0; ; attempt++) {
     controller = new AbortController();
-    timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
       res = await fetch(`${BASE}${path}`, {
         ...init,

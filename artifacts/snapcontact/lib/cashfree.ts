@@ -37,10 +37,14 @@ export function normalizeIndianMobile(input: string): string | null {
   return /^[6-9]\d{9}$/.test(digits) ? digits : null;
 }
 
-type AuthedFetch = (path: string, options?: RequestInit) => Promise<any>;
+type AuthedFetch = (path: string, options?: RequestInit & { timeoutMs?: number }) => Promise<any>;
+
+// Creating an order is one quick call. If the server has not answered in this time, stop
+// waiting and show the error with the form, instead of spinning for a minute.
+const ORDER_TIMEOUT_MS = 20_000;
 
 export async function startCheckout(authedFetch: AuthedFetch, phone: string, plan = 'annual'): Promise<CheckoutSession> {
-  return authedFetch('/cashfree/orders', { method: 'POST', body: JSON.stringify({ plan, phone }) });
+  return authedFetch('/cashfree/orders', { method: 'POST', body: JSON.stringify({ plan, phone }), timeoutMs: ORDER_TIMEOUT_MS });
 }
 
 export async function verifyPayment(authedFetch: AuthedFetch, orderId: string): Promise<PaymentOutcome> {

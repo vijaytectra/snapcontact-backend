@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { S } from '@/lib/strings';
 import { F, PressScale, tap } from './ui';
+import { EXCLUSION_LABEL, exclusionReason } from '@/lib/contactSummary';
 
 export type Cand = {
   id: string;
@@ -86,6 +87,9 @@ export function CandidateCard({
   onAction: (a: 'copy' | 'call' | 'whatsapp' | 'email' | 'website') => void;
 }) {
   const bad = !cand.valid;
+  // Saved only with a name and a valid number; until then the checkbox is off and says why.
+  const reason = exclusionReason(cand);
+  const ready = reason === null;
 
   const inputStyle = {
     fontFamily: F.m,
@@ -125,8 +129,8 @@ export function CandidateCard({
         testID={`select-${cand.id}`}
         accessibilityRole="checkbox"
         accessibilityLabel={`Select contact ${index + 1}${cand.name ? ', ' + cand.name : ''}`}
-        accessibilityState={{ checked: cand.selected, disabled: bad }}
-        disabled={bad}
+        accessibilityState={{ checked: cand.selected, disabled: !ready }}
+        disabled={!ready}
         onPress={() => {
           tap();
           onChange({ selected: !cand.selected });
@@ -152,6 +156,12 @@ export function CandidateCard({
           {cand.extension ? `  ·  ${S.review.ext(cand.extension)}` : ''}
         </Text>
       </PressScale>
+
+      {!ready ? (
+        <Text testID={`reason-${cand.id}`} style={{ fontFamily: F.m, fontSize: 13, color: '#B45309', marginTop: -6 }}>
+          {reason === 'NO_NAME' ? 'Add a name to save this number' : EXCLUSION_LABEL[reason]}
+        </Text>
+      ) : null}
 
       {/* Field 1: Name (a person when one is found, otherwise the business) */}
       <View style={{ gap: 8 }}>

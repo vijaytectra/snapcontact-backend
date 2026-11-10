@@ -93,8 +93,8 @@ export function CashfreeModal({
       <View style={{ flex: 1, backgroundColor: c.background, paddingTop: Math.max(i.top, 44) + 12 }} testID="cashfree-modal">
         <View style={{ flex: 1, maxWidth: 520, width: '100%', alignSelf: 'center' }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 24, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: c.border }}>
-            <View style={{ gap: 2, flex: 1 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <View style={{ gap: 2, flex: 1, minWidth: 0, paddingRight: 12 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
                 <Text accessibilityRole="header" style={{ fontFamily: F.b, fontSize: 22, color: c.foreground, letterSpacing: -0.5 }}>
                   Cashfree Payments
                 </Text>

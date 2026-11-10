@@ -5,12 +5,14 @@ import * as ImagePicker from 'expo-image-picker';
 import * as Clipboard from 'expo-clipboard';
 import { getLocales } from 'expo-localization';
 import { getCountries, type CountryCode } from 'libphonenumber-js/max';
-import { countryOptions, extractCandidates, prepareNumberCopy, validateInContext, type Candidate, type CountryOption } from '@/lib/phone';
+import { contextCountries, countryOptions, extractCandidates, prepareNumberCopy, validateInContext, type Candidate, type CountryOption } from '@/lib/phone';
 import * as device from '@/lib/device';
 import { runContactQueue } from '@/lib/contactQueue';
 import { addToOfflineQueue, getOfflineQueue, removeFromOfflineQueue, removeManyFromOfflineQueue } from '@/lib/offlineQueue';
 import { R } from '@/lib/runtimeStrings';
 import { isProper } from '@/lib/contactSummary';
+import { sanitizeName } from '@/lib/nameRules';
+import { rememberSavedNumbers, savedNumberSet } from '@/lib/savedNumbers';
 
 export type { Candidate, CountryOption };
 type Phase = 'idle' | 'processing' | 'review' | 'saving';
@@ -38,6 +40,8 @@ export function useCapture() {
   const [quickCaptureActive, setQuickCaptureActive] = useState(false);
   const generation = useRef(0);
   const busy = useRef(false);
+  // True while the review shows a screen capture, so a declined capture can clear that result.
+  const captureFromScreen = useRef(false);
   const countryRef = useRef(country);
   // Only a country the user picked overrides automatic detection on later launches.
   const countryChosen = useRef(false);
@@ -48,7 +52,19 @@ export function useCapture() {
     catch { setError(R.preferenceWrite); }
   }, []);
 
+  // With no country chosen by the user, the country code printed on the image (e.g. +1) is the default,
+  // rather than the SIM or language setting.
+  const adoptImageCountry = (text: string) => {
+    if (countryChosen.current) return;
+    const hint = contextCountries(text)[0];
+    if (hint && hint !== countryRef.current) {
+      countryRef.current = hint;
+      setCountryState(hint);
+    }
+  };
+
   const processImage = useCallback(async (uri: string) => {
+    captureFromScreen.current = false;
     const ticket = ++generation.current;
     busy.current = true;
     const previous = imageRef.current;
@@ -83,6 +99,7 @@ export function useCapture() {
         }
         if (ticket !== generation.current) return;
         setText(recognized);
+        adoptImageCountry(recognized);
         setCandidates(extractCandidates(recognized, countryRef.current));
         setPhase('review');
         if (!recognized.trim()) setNotice(R.noReadableText);
@@ -134,6 +151,8 @@ export function useCapture() {
     imageRef.current = null;
     setImageUri(null);
     setText(capturedText);
+    captureFromScreen.current = true;
+    adoptImageCountry(capturedText);
     const extracted = extractCandidates(capturedText, countryRef.current);
     setCandidates(extracted);
     setPhase('review');
@@ -203,6 +222,19 @@ export function useCapture() {
     });
 
     const unsubError = device.addQuickCaptureListener('onQuickCaptureError', (data: { error?: string }) => {
+      // A declined or failed capture produced nothing: drop the earlier screen capture and its
+      // "captured" message so the review does not show stale contacts as if they were new.
+      setNotice(null);
+      if (captureFromScreen.current) {
+        captureFromScreen.current = false;
+        generation.current++;
+        imageRef.current = null;
+        setImageUri(null);
+        setText('');
+        setCandidates([]);
+        setOutcomes([]);
+        setPhase('idle');
+      }
       setError(data?.error || R.quickCaptureFailed);
     });
 
@@ -265,6 +297,8 @@ export function useCapture() {
   const processText = (value: string) => {
     if (busy.current) return;
     generation.current++;
+    captureFromScreen.current = false;
+    adoptImageCountry(value);
     setText(value); setCandidates(extractCandidates(value, countryRef.current));
     setPhase('review'); setError(null); setNotice(null); setOutcomes([]);
   };
@@ -272,7 +306,9 @@ export function useCapture() {
     if (busy.current) return;
     setCandidates(rows => rows.map(row => {
       if (row.id !== id) return row;
-      const merged = { ...row, ...patch };
+      // Names only ever hold letters, spaces and the punctuation allowed in names (see nameRules.ts).
+      const safePatch = patch.name !== undefined ? { ...patch, name: sanitizeName(patch.name) } : patch;
+      const merged = { ...row, ...safePatch };
       const check = merged.number
         ? validateInContext(merged.number, countryRef.current, merged.countryHints)
         : { valid: Boolean(merged.email || merged.website), formatted: merged.email || merged.website || '', message: '', extension: undefined, countryLabel: '', country: undefined, callingCode: undefined, countryName: '', international: false };
@@ -296,13 +332,26 @@ export function useCapture() {
     // Never drop a selection silently: say how many were left out and why.
     const left = candidates.filter(row => row.selected && !isProper(row)).length;
     if (left) setNotice(`${left} selected ${left === 1 ? 'entry was' : 'entries were'} not saved: each needs a name and a valid number.`);
-    const requests = chosen.flatMap(row => {
+    const built = chosen.flatMap(row => {
       const checked = validateInContext(row.number, countryRef.current, row.countryHints);
       return checked.valid ? [{
         id: row.id, name: row.name.trim(),
         number: checked.e164 + (checked.extension ? `;ext=${checked.extension}` : ''),
       }] : [];
     });
+    // Numbers this app already saved are not opened again: that is what made duplicates.
+    const alreadySaved = await savedNumberSet().catch(() => new Set<string>());
+    const requests = built.filter(r => !alreadySaved.has(r.number.split(';')[0]));
+    const duplicates = built.length - requests.length;
+    if (duplicates > 0) {
+      const names = built.filter(r => alreadySaved.has(r.number.split(';')[0])).map(r => r.name || r.number);
+      setNotice(`${duplicates} ${duplicates === 1 ? 'contact was' : 'contacts were'} already saved and skipped: ${names.join(', ')}.`);
+    }
+    if (requests.length === 0) {
+      busy.current = false;
+      setPhase('review');
+      return;
+    }
     // Persist the selection before any editor opens: if the app is killed mid-save, the
     // unfinished contacts are retried on the next launch instead of being lost.
     await addToOfflineQueue(requests).catch(() => undefined);
@@ -314,6 +363,8 @@ export function useCapture() {
       await runContactQueue([...leftovers, ...requests], device.createContact, result => {
         setOutcomes(old => [...old, result]);
         if (result.status === 'saved') {
+          const done = [...leftovers, ...requests].find(r => r.id === result.id);
+          if (done) void rememberSavedNumbers([done.number.split(';')[0]]);
           void removeFromOfflineQueue(result.id).catch(() => undefined);
           setCandidates(old => old.map(c => c.id === result.id ? { ...c, selected: false } : c));
         }
@@ -341,6 +392,13 @@ export function useCapture() {
       }
     }).catch(() => undefined);
   }, []);
+
+  /** Removes entries from the review list entirely (not just unticks them). */
+  const removeCandidates = (ids: string[]) => {
+    if (busy.current || ids.length === 0) return;
+    const drop = new Set(ids);
+    setCandidates(rows => rows.filter(row => !drop.has(row.id)));
+  };
 
   const clear = () => {
     if (busy.current && phase === 'saving') return;
@@ -447,7 +505,7 @@ export function useCapture() {
     nativeAvailable: device.nativeAvailable, ocrAvailable: device.ocrAvailable, ocrProgress,
     quickCaptureAvailable: device.quickCaptureAvailable, quickCaptureActive, toggleQuickCapture,
     completeOnboarding, resetOnboarding, setCountry, importImage, processText,
-    setText, updateCandidate, selectAll, saveSelected, clear, action, openSettings,
+    setText, updateCandidate, selectAll, saveSelected, removeCandidates, clear, action, openSettings,
     retry: async () => { if (imageRef.current && !busy.current) await processImage(imageRef.current); },
     dismissError: () => { setError(null); },
   };

@@ -35,10 +35,24 @@ test('two cards separated by a blank line keep their own names', () => {
   assert.equal(find(rows, '9123456789').name, 'Anita Sharma');
 });
 
-test('a name across a blank line is not attached to a number in another card', () => {
+test('a name across a blank line is used only when no other number lies between', () => {
+  // Nothing else between the name and the number: the blank line inside one card is allowed.
   const [row] = extractCandidates('Ravi Kumar\n\n+91 98765 43210', 'IN');
-  assert.equal(row.name, '');
-  assert.equal(exclusionReason(row), 'NO_NAME');
+  assert.equal(row.name, 'Ravi Kumar');
+});
+
+test('a name midway between two numbers is not guessed for either of them', () => {
+  const rows = extractCandidates('+91 98765 43210\n\nRavi Kumar\n\n+91 91234 56789', 'IN');
+  assert.equal(rows.length, 2);
+  assert.ok(rows.every((r) => r.name === ''), 'neither number takes the name between them');
+});
+
+test('a name nearer to one number is taken by that number only', () => {
+  const rows = extractCandidates('+91 98765 43210\nRavi Kumar\n\n\n\n\n\n+91 91234 56789', 'IN');
+  const first = rows.find((r) => r.number.includes('98765'));
+  const second = rows.find((r) => r.number.includes('91234'));
+  assert.equal(first.name, 'Ravi Kumar');
+  assert.equal(second.name, '');
 });
 
 test('a country list line is never taken as the company or the name', () => {
