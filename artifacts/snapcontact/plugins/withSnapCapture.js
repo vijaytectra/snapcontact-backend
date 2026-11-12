@@ -1,10 +1,11 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const {
-  withInfoPlist, withEntitlementsPlist, withAndroidManifest, withXcodeProject,
+  withInfoPlist, withEntitlementsPlist, withAndroidManifest, withXcodeProject, withMainActivity,
   createRunOncePlugin,
 } = require('expo/config-plugins');
 const { ensureTargetDependency } = require('./xcodeTargetDependency');
+const { addOnNewIntent } = require('./mainActivityIntent');
 
 const TARGET = 'SnapContactShare';
 
@@ -23,6 +24,10 @@ function withSnapCapture(config) {
     mod.modResults['com.apple.security.application-groups'] = [
       ...new Set([...(mod.modResults['com.apple.security.application-groups'] ?? []), appGroup]),
     ];
+    return mod;
+  });
+  config = withMainActivity(config, mod => {
+    mod.modResults.contents = addOnNewIntent(mod.modResults.contents);
     return mod;
   });
   config = withAndroidManifest(config, mod => {

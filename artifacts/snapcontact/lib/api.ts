@@ -80,7 +80,9 @@ export async function apiFetch(path: string, options: RequestInit & { retry?: bo
       clearTimeout(timer);
       if (e?.name === 'AbortError') throw timeoutError();
       if (attempt >= maxRetries) {
-        throw new ApiError('Could not reach the server. Check your internet connection and try again.', 0);
+        // The underlying reason is included so a device-specific failure can be diagnosed.
+        const reason = e?.message ? ` (${String(e.message).slice(0, 120)})` : '';
+        throw new ApiError(`Could not reach the server${reason}. Check your internet connection and try again.`, 0);
       }
       await wait(RETRY_DELAYS_MS[attempt]);
     }

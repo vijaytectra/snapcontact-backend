@@ -1,4 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useFocusEffect } from 'expo-router';
 import {
   FlatList,
   Image,
@@ -14,7 +15,8 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
+import Animated, { FadeIn, FadeInDown, runOnJS, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { StatusBar } from 'expo-status-bar';
 import { useCapture } from '@/hooks/useCapture';
 import * as Linking from 'expo-linking';
@@ -33,13 +35,76 @@ import { AuthModal } from '@/components/AuthModal';
 import { SubscriptionModal } from '@/components/SubscriptionModal';
 import { CashfreeModal } from '@/components/CashfreeModal';
 import { useAuth } from '@/hooks/useAuth';
+import { ApiError } from '@/lib/api';
+import { loadPendingPayment, clearPendingPayment } from '@/lib/pendingPayment';
+
+// How far the "Text or Paste" sheet overlaps the blue hero above it.
+const SHEET_OVERLAP = 28;
 
 export default function Index() {
   const cap = useCapture();
   const auth = useAuth();
+  // Coming back from the payment screen (or any other screen) re-reads the plan from the server,
+  // so Pro shows as soon as the payment is confirmed.
+  const refreshProfileRef = useRef(auth.refreshProfile);
+  refreshProfileRef.current = auth.refreshProfile;
+  const hasServerAccount = !!auth.user && !auth.isDemo;
+  useFocusEffect(
+    useCallback(() => {
+      if (!hasServerAccount) return;
+      refreshProfileRef.current().catch(() => { /* offline: keep the cached plan */ });
+    }, [hasServerAccount]),
+  );
   const i = useInsets();
-  const { width: windowWidth } = useWindowDimensions();
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const cardWidth = Math.min(windowWidth - 40, 480);
+
+  // Grab handle on the "Text or Paste" sheet: drag it up (or tap) and the whole sheet slides
+  // all the way to the top of the screen, over the page. Its own content scrolls, and the page
+  // keeps scrolling underneath it. Drag down (or tap again) to put it back at the bottom.
+  const [heroHeight, setHeroHeight] = useState(0);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const sheetLift = useSharedValue(0);
+  const sheetLiftStart = useSharedValue(0);
+  const sheetLiftMax = useSharedValue(0);
+  // Where the sheet rests when closed. Until the hero has been measured, keep it low so it
+  // does not flash over the whole screen on the first frame.
+  const sheetCollapsedTop = heroHeight > 0 ? heroHeight - SHEET_OVERLAP : Math.round(windowHeight * 0.55);
+  const sheetMaxLift = Math.max(0, sheetCollapsedTop - i.top);
+  useEffect(() => {
+    sheetLiftMax.value = sheetMaxLift;
+    if (sheetLift.value > sheetMaxLift) sheetLift.value = sheetMaxLift;
+  }, [sheetMaxLift, sheetLift, sheetLiftMax]);
+  // The sheet is pinned to the bottom of the screen; animating `top` both moves it up and
+  // grows it, so no gap is left at the bottom when it is fully open.
+  const sheetStyle = useAnimatedStyle(() => ({ top: sheetCollapsedTop - sheetLift.value }));
+
+  const settleSheet = useCallback((open: boolean) => {
+    setSheetOpen(open);
+    sheetLift.value = withSpring(open ? sheetLiftMax.value : 0, { damping: 22, stiffness: 220 });
+  }, [sheetLift, sheetLiftMax]);
+
+  const grabGesture = Gesture.Race(
+    Gesture.Pan()
+      .activeOffsetY([-6, 6])
+      .onStart(() => {
+        sheetLiftStart.value = sheetLift.value;
+      })
+      .onUpdate((e) => {
+        sheetLift.value = Math.min(sheetLiftMax.value, Math.max(0, sheetLiftStart.value - e.translationY));
+      })
+      .onEnd((e) => {
+        const end = sheetLiftStart.value - e.translationY;
+        const open = e.velocityY < -500 || (e.velocityY <= 500 && end > sheetLiftMax.value / 2);
+        sheetLift.value = withSpring(open ? sheetLiftMax.value : 0, { damping: 22, stiffness: 220 });
+        runOnJS(setSheetOpen)(open);
+      }),
+    Gesture.Tap().onEnd(() => {
+      const open = sheetLift.value <= 1;
+      sheetLift.value = withSpring(open ? sheetLiftMax.value : 0, { damping: 22, stiffness: 220 });
+      runOnJS(setSheetOpen)(open);
+    }),
+  );
 
   const [countryOpen, setCountryOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -70,6 +135,28 @@ export default function Index() {
     }
   }, [auth.user, cap.onboarded]);
 
+  // A payment returned while signed out (or not finished on the payment screen) is checked here
+  // once the account is signed in. Pending stays saved until the server reports a final outcome.
+  const signedInUserId = auth.user?.id;
+  useEffect(() => {
+    if (!signedInUserId) return;
+    let cancelled = false;
+    void (async () => {
+      const pending = await loadPendingPayment();
+      if (!pending || cancelled) return;
+      // Saved for another account on this phone: leave it for that account.
+      if (pending.userId && pending.userId !== signedInUserId) return;
+      try {
+        const outcome = await authRef.current.checkPayment(pending.orderId);
+        if (outcome !== 'pending') await clearPendingPayment();
+      } catch (e) {
+        // The server does not know this order for this account: nothing left to check.
+        if (e instanceof ApiError && e.status === 404) await clearPendingPayment();
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [signedInUserId]);
+
   // Deep links arrive in a listener set up once; read the latest auth state through a ref.
   const authRef = useRef(auth);
   authRef.current = auth;
@@ -78,12 +165,8 @@ export default function Index() {
       const auth = authRef.current;
       if (!url) return;
       const parsed = Linking.parse(url);
-      // Return from Cashfree checkout (e.g. the app was restarted meanwhile): ask the server.
-      const orderId = parsed.queryParams?.order_id as string | undefined;
-      if (parsed.hostname === 'payment' || parsed.path === 'payment') {
-        if (orderId && auth.user) void auth.checkPayment(orderId).catch(() => {});
-        return;
-      }
+      // Return from Cashfree checkout: the payment screen (app/payment.tsx) checks the order.
+      if (parsed.hostname === 'payment' || parsed.path === 'payment') return;
       const email = parsed.queryParams?.email as string | undefined;
       const token = parsed.queryParams?.token as string | undefined;
       if (email && token) {
@@ -257,6 +340,7 @@ export default function Index() {
         <StatusBar style="light" />
         <KeyboardAwareScrollViewCompat
           testID="main-scroll"
+          style={{ flex: 1 }}
           bottomOffset={24}
           contentContainerStyle={{ flexGrow: 1 }}
           showsVerticalScrollIndicator={false}
@@ -265,6 +349,7 @@ export default function Index() {
           <LinearGradient
             colors={['#2F5E9E', '#143A70', '#06193B', '#030E25']}
             locations={[0, 0.3, 0.7, 1]}
+            onLayout={(e) => setHeroHeight(e.nativeEvent.layout.height)}
             start={{ x: 0, y: 0 }}
             end={{ x: 0.8, y: 1 }}
             style={{
@@ -318,16 +403,16 @@ export default function Index() {
                 style={{
                   flexDirection: 'row', alignItems: 'center', gap: 6,
                   paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999,
-                  backgroundColor: auth.subscription.status === 'expired' ? '#F59E0B' : 'rgba(255,255,255,0.14)',
-                  borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)',
+                  backgroundColor: auth.subscription.status === 'annual' ? '#F5C542' : auth.subscription.status === 'expired' ? '#F59E0B' : 'rgba(255,255,255,0.14)',
+                  borderWidth: 1, borderColor: auth.subscription.status === 'annual' ? '#C98A12' : 'rgba(255,255,255,0.25)',
                 }}
               >
                 <Ionicons
                   name={auth.subscription.status === 'annual' ? 'star' : 'time-outline'}
                   size={14}
-                  color={auth.subscription.status === 'expired' ? '#080809' : '#FFFFFF'}
+                  color={auth.subscription.status === 'annual' || auth.subscription.status === 'expired' ? '#1A1200' : '#FFFFFF'}
                 />
-                <Text style={{ fontFamily: F.s, fontSize: 12, color: auth.subscription.status === 'expired' ? '#080809' : '#FFFFFF' }}>
+                <Text style={{ fontFamily: F.b, fontSize: 12, letterSpacing: 0.4, color: auth.subscription.status === 'annual' || auth.subscription.status === 'expired' ? '#1A1200' : '#FFFFFF' }}>
                   {auth.subscription.status === 'annual'
                     ? 'Pro'
                     : auth.subscription.status === 'expired'
@@ -476,14 +561,23 @@ export default function Index() {
             </Animated.View>
           </LinearGradient>
 
-          {/* Bottom Sliding Sheet: Text or Paste Section */}
+        </KeyboardAwareScrollViewCompat>
+
+        {/* Bottom Sliding Sheet: Text or Paste Section.
+            It sits on top of the page, slides up to the very top of the screen from its black
+            grab line, and its own content scrolls while the page keeps scrolling underneath. */}
+        <Animated.View
+          style={[
+            { position: 'absolute', left: 0, right: 0, bottom: 0 },
+            sheetStyle,
+          ]}
+        >
           <LinearGradient
             colors={['#D3D9E2', '#E3E7ED', '#D9DEE6']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={{
               flex: 1,
-              marginTop: -28,
               borderTopLeftRadius: 28,
               borderTopRightRadius: 28,
               paddingHorizontal: 20,
@@ -492,31 +586,49 @@ export default function Index() {
               gap: 16,
             }}
           >
-            {/* Grab Handle */}
-            <View
-              style={{
-                width: 56,
-                height: 5,
-                borderRadius: 3,
-                backgroundColor: '#111111',
-                alignSelf: 'center',
-                marginBottom: 4,
-              }}
-            />
+            {/* Grab Handle + title: the whole header is the touch target. Drag up (or tap) to
+                slide the paste area to the top of the screen; drag down (or tap) to put it back. */}
+            <GestureDetector gesture={grabGesture}>
+              <View
+                testID="paste-sheet-handle"
+                accessibilityRole="button"
+                accessibilityLabel={sheetOpen ? 'Collapse the paste area' : 'Expand the paste area'}
+                accessibilityHint="Drag up or tap to slide the paste area to the top of the screen."
+                hitSlop={{ top: 12, bottom: 8, left: 40, right: 40 }}
+                style={{ alignSelf: 'stretch', alignItems: 'center', paddingTop: 4, paddingBottom: 10 }}
+              >
+                <View
+                  style={{
+                    width: 56,
+                    height: 5,
+                    borderRadius: 3,
+                    backgroundColor: '#111111',
+                  }}
+                />
+                <Text
+                  style={{
+                    fontFamily: F.m,
+                    fontSize: 18,
+                    color: '#111111',
+                    letterSpacing: -0.2,
+                    marginTop: 14,
+                  }}
+                >
+                  Text or Paste
+                </Text>
+              </View>
+            </GestureDetector>
 
             {messages}
 
-            {/* Title: Text or Paste */}
-            <Text
-              style={{
-                fontFamily: F.m,
-                fontSize: 18,
-                color: '#111111',
-                letterSpacing: -0.2,
-              }}
+            <ScrollView
+              testID="paste-sheet-scroll"
+              style={{ flex: 1 }}
+              contentContainerStyle={{ gap: 16, paddingBottom: 4 }}
+              showsVerticalScrollIndicator={sheetOpen}
+              nestedScrollEnabled
+              keyboardShouldPersistTaps="handled"
             >
-              Text or Paste
-            </Text>
 
             {/* Pure White Text Input Card */}
             <View
@@ -676,8 +788,9 @@ export default function Index() {
                 </PressScale>
               </View>
             ) : null}
+            </ScrollView>
           </LinearGradient>
-        </KeyboardAwareScrollViewCompat>
+        </Animated.View>
 
         {/* Search History Modal */}
         <Modal visible={historyOpen} animationType="slide" transparent onRequestClose={() => setHistoryOpen(false)}>

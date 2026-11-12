@@ -208,6 +208,9 @@ class SnapCaptureModule : Module() {
       val intent = currentActivity?.intent
       if (intent != null && intent.action == Intent.ACTION_SEND && intent.type?.startsWith("image/") == true) {
         val imageUri = intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
+        // Consume the share so it is not offered again when the app returns to the foreground
+        // or after the review is discarded.
+        currentActivity.setIntent(Intent(Intent.ACTION_MAIN))
         promise.resolve(imageUri?.toString())
       } else {
         promise.resolve(null)

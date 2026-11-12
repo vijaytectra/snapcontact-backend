@@ -100,10 +100,10 @@ export function SubscriptionModal({
             <Animated.View
               entering={FadeInDown.duration(350)}
               style={{
-                backgroundColor: c.card,
+                backgroundColor: isAnnual ? c.proSoft : c.card,
                 borderRadius: 20,
                 borderWidth: 1,
-                borderColor: c.border,
+                borderColor: isAnnual ? c.pro : c.border,
                 padding: 20,
                 gap: 14,
               }}
@@ -123,7 +123,7 @@ export function SubscriptionModal({
                 </View>
                 <View
                   style={{
-                    backgroundColor: isAnnual ? '#FFFFFF' : 'rgba(255, 255, 255, 0.12)',
+                    backgroundColor: isAnnual ? c.pro : 'rgba(255, 255, 255, 0.12)',
                     paddingHorizontal: 10,
                     paddingVertical: 5,
                     borderRadius: 999,
@@ -133,7 +133,7 @@ export function SubscriptionModal({
                     style={{
                       fontFamily: F.b,
                       fontSize: 11,
-                      color: isAnnual ? '#080809' : '#FFFFFF',
+                      color: isAnnual ? c.proForeground : '#FFFFFF',
                       letterSpacing: 0.5,
                     }}
                   >
